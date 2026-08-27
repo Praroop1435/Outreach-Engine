@@ -20,7 +20,10 @@ import {
   Sparkles,
   ExternalLink,
   MousePointerClick,
-  Activity
+  Activity,
+  Key,
+  ShieldCheck,
+  Globe
 } from 'lucide-react';
 
 interface EmailMessage {
@@ -102,6 +105,12 @@ interface XStatus {
   connected: boolean;
   username: string | null;
   name: string | null;
+  browser_automation?: {
+    has_session: boolean;
+    cookies_count?: number;
+    updated_at?: string | null;
+    details?: string;
+  };
 }
 
 interface ResumeStatus {
@@ -144,12 +153,18 @@ export default function OutreachEngineDashboard() {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isComposeModalOpen, setIsComposeModalOpen] = useState(false);
   const [isTemplateBuilderOpen, setIsTemplateBuilderOpen] = useState(false);
+  const [isXCookieModalOpen, setIsXCookieModalOpen] = useState(false);
   
   // Link Clicks Pop-up Modal state
   const [isClicksModalOpen, setIsClicksModalOpen] = useState(false);
   const [clicksModalLeadId, setClicksModalLeadId] = useState<number | null>(null);
   const [clicksData, setClicksData] = useState<LinkClick[]>([]);
   const [isLoadingClicks, setIsLoadingClicks] = useState(false);
+
+  // X Cookie State
+  const [authTokenInput, setAuthTokenInput] = useState('');
+  const [ct0Input, setCt0Input] = useState('');
+  const [isSavingCookies, setIsSavingCookies] = useState(false);
 
   // Compose state
   const [composeLead, setComposeLead] = useState<Lead | null>(null);
@@ -260,6 +275,35 @@ export default function OutreachEngineDashboard() {
     }
   };
 
+  // Save X Cookies for Playwright Browser Automation
+  const handleSaveXCookies = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!authTokenInput.trim() || !ct0Input.trim()) {
+      showToast('Both auth_token and ct0 cookies are required', 'error');
+      return;
+    }
+
+    setIsSavingCookies(true);
+    try {
+      const res = await fetch('/api/auth/x/save-cookies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ auth_token: authTokenInput, ct0: ct0Input })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Failed to save cookies');
+      showToast('X Browser Automation session active!');
+      setIsXCookieModalOpen(false);
+      setAuthTokenInput('');
+      setCt0Input('');
+      fetchData();
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    } finally {
+      setIsSavingCookies(false);
+    }
+  };
+
   // Open Clicks Pop-up Modal
   const openClicksModal = async (leadId: number | null = null) => {
     setClicksModalLeadId(leadId);
@@ -360,14 +404,9 @@ export default function OutreachEngineDashboard() {
         if (!res.ok) throw new Error(data.detail || 'Email failed to send');
         showToast(`Email sent with UTM tracking & ${attachResume ? 'Praroop_Anand.pdf' : 'no attachment'}`);
       } else {
-        // X DM
+        // X DM via Playwright Browser Automation / API
         if (!composeXHandle.trim()) {
           showToast('Please provide a valid X handle', 'error');
-          setIsSending(false);
-          return;
-        }
-        if (!xStatus.connected) {
-          showToast('Please connect your X account first', 'error');
           setIsSending(false);
           return;
         }
@@ -379,7 +418,7 @@ export default function OutreachEngineDashboard() {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'X DM failed to send');
-        showToast(`X DM sent to ${composeXHandle}`);
+        showToast(data.message || `X DM sent to ${composeXHandle}`);
       }
 
       setIsComposeModalOpen(false);
@@ -611,6 +650,8 @@ export default function OutreachEngineDashboard() {
     }
   };
 
+  const hasBrowserSession = xStatus.browser_automation?.has_session;
+
   return (
     <div className="min-h-screen bg-white text-gray-900 font-sans">
       {/* Toast Notification */}
@@ -658,18 +699,25 @@ export default function OutreachEngineDashboard() {
               />
             </div>
 
-            {xStatus.connected && xStatus.username ? (
-              <span className="text-xs text-gray-700 bg-gray-50 px-2.5 py-1 rounded border border-gray-200 font-medium">
-                X: @{xStatus.username}
+            {/* X Browser Automation Pill */}
+            <button
+              onClick={() => setIsXCookieModalOpen(true)}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded border text-xs transition ${
+                hasBrowserSession
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                  : 'bg-gray-50 text-gray-700 border-gray-300 hover:bg-gray-100'
+              }`}
+              title="Configure X Browser Automation Cookies"
+            >
+              {hasBrowserSession ? (
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+              ) : (
+                <Key className="w-3.5 h-3.5 text-gray-500" />
+              )}
+              <span className="font-medium">
+                {hasBrowserSession ? 'X Browser: Active' : 'Setup X Cookies'}
               </span>
-            ) : (
-              <a
-                href="/api/auth/x/login"
-                className="text-xs text-gray-700 hover:text-black bg-white hover:bg-gray-50 px-2.5 py-1 rounded border border-gray-300 font-medium transition"
-              >
-                Connect X
-              </a>
-            )}
+            </button>
           </div>
 
           <div className="flex items-center gap-2">
@@ -874,6 +922,82 @@ export default function OutreachEngineDashboard() {
         </div>
 
       </div>
+
+      {/* X Cookie / Playwright Automation Modal */}
+      {isXCookieModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+          <div className="bg-white rounded-lg border border-gray-200 max-w-lg w-full shadow-xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Key className="w-4 h-4 text-gray-900" />
+                <h3 className="text-sm font-semibold text-gray-950">X (Twitter) Browser Automation Setup</h3>
+              </div>
+              <button onClick={() => setIsXCookieModalOpen(false)} className="p-1 text-gray-400 hover:text-gray-700">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveXCookies}>
+              <div className="p-5 space-y-4 text-xs">
+                <div className="bg-gray-50 p-3.5 rounded border border-gray-200 text-gray-600 space-y-1.5 leading-relaxed">
+                  <p className="font-semibold text-gray-900">How to get your X cookies (100% Free, no $100 API plan needed):</p>
+                  <ol className="list-decimal pl-4 space-y-1 text-[11px]">
+                    <li>Open <strong>x.com</strong> in your browser (logged in).</li>
+                    <li>Press <code className="bg-gray-200 px-1 py-0.5 rounded font-mono">F12</code> or right-click &rarr; <em>Inspect</em>.</li>
+                    <li>Click the <strong>Application</strong> (or <em>Storage</em>) tab &rarr; <strong>Cookies</strong> &rarr; <code className="bg-gray-200 px-1 py-0.5 rounded font-mono">https://x.com</code>.</li>
+                    <li>Copy the values for <strong>auth_token</strong> and <strong>ct0</strong>.</li>
+                  </ol>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    auth_token Cookie *
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="e.g. 7f8a9b2c3d4e5f6..."
+                    value={authTokenInput}
+                    onChange={e => setAuthTokenInput(e.target.value)}
+                    className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900 font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    ct0 (CSRF Token) Cookie *
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="e.g. 1a2b3c4d5e6f7a8b9..."
+                    value={ct0Input}
+                    onChange={e => setCt0Input(e.target.value)}
+                    className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="px-5 py-3 border-t border-gray-200 bg-gray-50 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsXCookieModalOpen(false)}
+                  className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingCookies}
+                  className="px-4 py-1.5 text-xs font-medium text-white bg-gray-900 rounded hover:bg-black disabled:opacity-60 transition"
+                >
+                  {isSavingCookies ? 'Saving Session...' : 'Save & Activate Automation'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Link Clicks Pop-up Modal */}
       {isClicksModalOpen && (
@@ -1174,6 +1298,11 @@ export default function OutreachEngineDashboard() {
                     placeholder="e.g. jerry_ai"
                     className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900 font-mono"
                   />
+                  {!hasBrowserSession && (
+                    <p className="text-[11px] text-amber-700 mt-1 flex items-center gap-1">
+                      <span>No browser session. Click <strong>"Setup X Cookies"</strong> in the header to enable free automated sending.</span>
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -1268,7 +1397,7 @@ export default function OutreachEngineDashboard() {
                 onClick={handleSendMessage}
                 className="px-4 py-1.5 text-xs font-medium text-white bg-gray-900 rounded hover:bg-black disabled:opacity-60 transition"
               >
-                {isSending ? 'Sending...' : composeChannel === 'EMAIL' ? 'Send via Gmail' : 'Send via X'}
+                {isSending ? 'Sending...' : composeChannel === 'EMAIL' ? 'Send via Gmail' : 'Send via X (Browser)'}
               </button>
             </div>
           </div>
