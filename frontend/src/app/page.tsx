@@ -1325,14 +1325,42 @@ export default function OutreachEngineDashboard() {
 
               {composeChannel === 'EMAIL' && (
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Subject</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-medium text-gray-700">Subject</label>
+                    <span className="text-[10px] text-gray-400">Click preset to apply:</span>
+                  </div>
                   <input
                     type="text"
                     value={composeSubject}
                     onChange={e => setComposeSubject(e.target.value)}
                     placeholder="Email subject..."
-                    className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900"
+                    className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900 font-sans"
                   />
+                  <div className="flex flex-wrap gap-1 mt-1.5">
+                    {[
+                      '{{role}} application — Praroop Anand',
+                      'Praroop / {{role}} at {{company}}',
+                      '{{company}} campus visit / {{role}} application',
+                      'Engineering & AI systems for {{company}}',
+                      'Quick note on {{custom_hook}} (Praroop)'
+                    ].map(preset => {
+                      const rendered = preset
+                        .replace(/\{\{\s*company\s*\}\}/gi, composeLead?.company || 'company')
+                        .replace(/\{\{\s*role\s*\}\}/gi, composeLead?.role || 'role')
+                        .replace(/\{\{\s*custom_hook\s*\}\}/gi, composeLead?.custom_hook || 'engineering');
+                      return (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => setComposeSubject(rendered)}
+                          className="px-2 py-0.5 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded border border-gray-200 text-[10px] truncate max-w-[260px] transition"
+                          title={`Use subject: ${rendered}`}
+                        >
+                          {rendered}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
 
@@ -1510,14 +1538,35 @@ export default function OutreachEngineDashboard() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Subject Template</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-medium text-gray-700">Subject Template</label>
+                      <span className="text-[10px] text-gray-400">Presets:</span>
+                    </div>
                     <input
                       type="text"
                       value={templateForm.subject_template}
                       onChange={e => setTemplateForm({ ...templateForm, subject_template: e.target.value })}
-                      placeholder="e.g. Building AI systems that work in production for {{company}}"
+                      placeholder="e.g. {{role}} application — Praroop Anand"
                       className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900 font-sans"
                     />
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {[
+                        '{{role}} application — Praroop Anand',
+                        'Praroop / {{role}} at {{company}}',
+                        '{{company}} campus visit / {{role}} application',
+                        'Engineering & AI systems for {{company}}',
+                        'Quick note on {{custom_hook}} (Praroop)'
+                      ].map(preset => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => setTemplateForm(prev => ({ ...prev, subject_template: preset }))}
+                          className="px-2 py-0.5 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded border border-gray-200 text-[10px] truncate max-w-[260px] transition"
+                        >
+                          {preset}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
                   <div>
