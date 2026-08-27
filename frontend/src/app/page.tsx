@@ -20,7 +20,7 @@ import {
   Sparkles,
   ExternalLink,
   MousePointerClick,
-  RefreshCw
+  Activity
 } from 'lucide-react';
 
 interface EmailMessage {
@@ -41,12 +41,16 @@ interface EmailMessage {
 interface LinkClick {
   id: number;
   lead_id: number;
+  lead_name?: string;
+  lead_company?: string;
+  lead_email?: string;
   target_url: string;
   utm_source: string;
   utm_campaign?: string;
   utm_content?: string;
   clicked_at: string;
   ip_address?: string;
+  user_agent?: string;
 }
 
 interface Lead {
@@ -90,6 +94,7 @@ interface Analytics {
   follow_up_needed: number;
   total_sent_emails: number;
   total_received_emails: number;
+  total_link_clicks: number;
   reply_rate: number;
 }
 
@@ -118,6 +123,7 @@ export default function OutreachEngineDashboard() {
     follow_up_needed: 0,
     total_sent_emails: 0,
     total_received_emails: 0,
+    total_link_clicks: 0,
     reply_rate: 0
   });
   const [xStatus, setXStatus] = useState<XStatus>({ connected: false, username: null, name: null });
@@ -139,6 +145,12 @@ export default function OutreachEngineDashboard() {
   const [isComposeModalOpen, setIsComposeModalOpen] = useState(false);
   const [isTemplateBuilderOpen, setIsTemplateBuilderOpen] = useState(false);
   
+  // Link Clicks Pop-up Modal state
+  const [isClicksModalOpen, setIsClicksModalOpen] = useState(false);
+  const [clicksModalLeadId, setClicksModalLeadId] = useState<number | null>(null);
+  const [clicksData, setClicksData] = useState<LinkClick[]>([]);
+  const [isLoadingClicks, setIsLoadingClicks] = useState(false);
+
   // Compose state
   const [composeLead, setComposeLead] = useState<Lead | null>(null);
   const [composeChannel, setComposeChannel] = useState<'EMAIL' | 'X_DM'>('EMAIL');
@@ -248,20 +260,21 @@ export default function OutreachEngineDashboard() {
     }
   };
 
-  // Sync X DMs Handler
-  const [isSyncingX, setIsSyncingX] = useState(false);
-  const handleSyncXDMs = async () => {
-    setIsSyncingX(true);
+  // Open Clicks Pop-up Modal
+  const openClicksModal = async (leadId: number | null = null) => {
+    setClicksModalLeadId(leadId);
+    setIsLoadingClicks(true);
+    setIsClicksModalOpen(true);
     try {
-      const res = await fetch('/api/auth/x/sync', { method: 'POST' });
+      const url = leadId ? `/api/analytics/clicks?lead_id=${leadId}` : '/api/analytics/clicks';
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Failed to fetch link clicks');
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'X DM sync failed');
-      showToast(data.message || 'X DMs synced!');
-      fetchData();
+      setClicksData(data);
     } catch (err: any) {
       showToast(err.message, 'error');
     } finally {
-      setIsSyncingX(false);
+      setIsLoadingClicks(false);
     }
   };
 
@@ -399,7 +412,7 @@ export default function OutreachEngineDashboard() {
         name: '',
         category: 'Cold Outreach',
         subject_template: 'Building AI systems that work in production for {{company}}',
-        body_template: 'Hi {{firstName}},\n\nI came across {{company}} and noticed your work on {{custom_hook}}.\n\nBest regards,\nPraroop Anand'
+        body_template: 'Hi {{firstName}},\n\nI came across {{company}} and spent some time looking into {{custom_hook}}.\n\nWhat caught my attention is that you are solving a problem I often run into while building AI systems: getting them to work reliably with real data, real workflows, and production scale rather than just a demo.\n\nMy background is in backend engineering and applied AI. I specialize in building production-grade FastAPI, PostgreSQL/pgvector, Redis, and Celery pipelines along with reliable LLM agent workflows and RAG evaluation systems.\n\nI have attached my resume (Praroop_Anand.pdf) and included my work below:\n\nPortfolio: https://praroop.site\nGitHub: https://github.com/Praroop1435\nAI Social Automate: https://aisocialautomate.com/\nInsightFlow AI: https://portal.e360insurance.com/\n\nIf you have a few minutes this week, I would be glad to connect and see if there is a mutual fit.\n\nBest regards,\nPraroop Anand'
       });
     }
     setIsTemplateBuilderOpen(true);
@@ -646,20 +659,9 @@ export default function OutreachEngineDashboard() {
             </div>
 
             {xStatus.connected && xStatus.username ? (
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs text-gray-700 bg-gray-50 px-2.5 py-1 rounded border border-gray-200 font-medium">
-                  X: @{xStatus.username}
-                </span>
-                <button
-                  onClick={handleSyncXDMs}
-                  disabled={isSyncingX}
-                  className="text-xs text-gray-700 hover:text-black bg-white hover:bg-gray-50 px-2.5 py-1 rounded border border-gray-300 font-medium transition flex items-center gap-1 disabled:opacity-60"
-                  title="Sync outreach DMs from X (skipping friends)"
-                >
-                  <RefreshCw className={`w-3 h-3 ${isSyncingX ? 'animate-spin' : ''}`} />
-                  <span>{isSyncingX ? 'Syncing...' : 'Sync X DMs'}</span>
-                </button>
-              </div>
+              <span className="text-xs text-gray-700 bg-gray-50 px-2.5 py-1 rounded border border-gray-200 font-medium">
+                X: @{xStatus.username}
+              </span>
             ) : (
               <a
                 href="/api/auth/x/login"
@@ -707,10 +709,20 @@ export default function OutreachEngineDashboard() {
             <div className="text-2xl font-semibold text-gray-950 mt-1">{analytics.contacted_count}</div>
             <div className="text-xs text-gray-400 mt-0.5">{analytics.total_sent_emails} sent messages</div>
           </div>
-          <div className="bg-white p-4 rounded border border-gray-200">
-            <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">Replies Received</div>
-            <div className="text-2xl font-semibold text-gray-950 mt-1">{analytics.replied_count}</div>
-            <div className="text-xs text-gray-400 mt-0.5">{analytics.reply_rate}% reply rate</div>
+          <div 
+            onClick={() => openClicksModal(null)}
+            className="bg-white p-4 rounded border border-gray-200 cursor-pointer hover:border-gray-900 transition group"
+            title="Click to view all link clicks & activity"
+          >
+            <div className="text-xs font-medium text-gray-500 uppercase tracking-wider flex items-center justify-between">
+              <span>Link Clicks</span>
+              <Activity className="w-3.5 h-3.5 text-blue-600 group-hover:scale-110 transition" />
+            </div>
+            <div className="text-2xl font-semibold text-gray-950 mt-1 flex items-baseline gap-2">
+              <span>{analytics.total_link_clicks}</span>
+              <span className="text-xs text-blue-600 font-medium group-hover:underline">View Log &rarr;</span>
+            </div>
+            <div className="text-xs text-gray-400 mt-0.5">tracked portfolio & demo links</div>
           </div>
           <div className="bg-white p-4 rounded border border-gray-200">
             <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">Follow-up Due</div>
@@ -759,8 +771,8 @@ export default function OutreachEngineDashboard() {
                   <th className="px-4 py-3">Company</th>
                   <th className="px-4 py-3">Email & X Handle</th>
                   <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Link Clicks</th>
                   <th className="px-4 py-3">Last Contacted</th>
-                  <th className="px-4 py-3">Messages</th>
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
@@ -783,6 +795,7 @@ export default function OutreachEngineDashboard() {
                     const lastContactedStr = lead.last_contacted_at
                       ? new Date(lead.last_contacted_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
                       : '—';
+                    const clicksCount = lead.click_count || 0;
 
                     return (
                       <tr key={lead.id} className="hover:bg-gray-50/60 transition">
@@ -806,11 +819,22 @@ export default function OutreachEngineDashboard() {
                             {lead.status.replace('_', ' ').toLowerCase()}
                           </span>
                         </td>
+                        <td className="px-4 py-3">
+                          <button
+                            onClick={() => openClicksModal(lead.id)}
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium transition ${
+                              clicksCount > 0
+                                ? 'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100'
+                                : 'text-gray-400 hover:text-gray-700'
+                            }`}
+                            title="Click to view details of links clicked by this prospect"
+                          >
+                            <MousePointerClick className="w-3 h-3" />
+                            <span>{clicksCount} {clicksCount === 1 ? 'click' : 'clicks'}</span>
+                          </button>
+                        </td>
                         <td className="px-4 py-3 text-gray-500">
                           {lastContactedStr}
-                        </td>
-                        <td className="px-4 py-3 text-gray-400 font-mono text-[11px]">
-                          {lead.message_count || 0} msgs
                         </td>
                         <td className="px-4 py-3 text-right">
                           <div className="flex items-center justify-end gap-1.5">
@@ -850,6 +874,103 @@ export default function OutreachEngineDashboard() {
         </div>
 
       </div>
+
+      {/* Link Clicks Pop-up Modal */}
+      {isClicksModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+          <div className="bg-white rounded-lg border border-gray-200 max-w-2xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <MousePointerClick className="w-4 h-4 text-blue-600" />
+                <h3 className="text-sm font-semibold text-gray-950">
+                  {clicksModalLeadId
+                    ? `Link Clicks for Prospect #${clicksModalLeadId}`
+                    : 'All Tracked Link Clicks & Activity'}
+                </h3>
+              </div>
+              <button 
+                onClick={() => setIsClicksModalOpen(false)} 
+                className="p-1 text-gray-400 hover:text-gray-700 rounded"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1 space-y-4">
+              {isLoadingClicks ? (
+                <div className="text-center py-10 text-xs text-gray-400">Loading click events...</div>
+              ) : clicksData.length === 0 ? (
+                <div className="text-center py-12 text-xs text-gray-500 border border-dashed border-gray-200 rounded-lg p-6">
+                  <p className="font-medium text-gray-800">No link clicks recorded yet.</p>
+                  <p className="text-gray-400 mt-1 text-[11px]">
+                    When a prospect opens any link (e.g. portfolio, GitHub, or live projects) in your outreach emails, their click and UTM data will show up right here in real time.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {clicksData.map(c => (
+                    <div key={c.id} className="p-3.5 bg-white border border-gray-200 rounded-lg shadow-sm text-xs space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <div className="font-semibold text-gray-950 flex items-center gap-1.5">
+                          <span>{c.lead_name || 'Prospect'}</span>
+                          <span className="text-gray-400 font-normal">({c.lead_company || c.lead_email})</span>
+                        </div>
+                        <span className="text-[11px] text-gray-500">
+                          {c.clicked_at ? new Date(c.clicked_at).toLocaleString() : '—'}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 pt-1">
+                        <span className="text-gray-500 font-medium">Destination:</span>
+                        <a
+                          href={c.target_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="font-mono text-blue-600 hover:underline flex items-center gap-1 truncate max-w-md"
+                        >
+                          <span>{c.target_url}</span>
+                          <ExternalLink className="w-3 h-3 shrink-0" />
+                        </a>
+                      </div>
+
+                      <div className="flex flex-wrap gap-1.5 pt-1.5">
+                        <span className="px-2 py-0.5 bg-gray-50 border border-gray-200 rounded font-mono text-[10px] text-gray-700">
+                          utm_source: {c.utm_source || 'outreach'}
+                        </span>
+                        {c.utm_campaign && (
+                          <span className="px-2 py-0.5 bg-gray-50 border border-gray-200 rounded font-mono text-[10px] text-gray-700">
+                            utm_campaign: {c.utm_campaign}
+                          </span>
+                        )}
+                        {c.utm_content && (
+                          <span className="px-2 py-0.5 bg-gray-50 border border-gray-200 rounded font-mono text-[10px] text-gray-700">
+                            utm_content: {c.utm_content}
+                          </span>
+                        )}
+                        {c.ip_address && (
+                          <span className="px-2 py-0.5 bg-gray-50 border border-gray-200 rounded font-mono text-[10px] text-gray-400">
+                            IP: {c.ip_address}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-3 border-t border-gray-200 bg-gray-50 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsClicksModalOpen(false)}
+                className="px-4 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Slide-over Drawer for Contact & History */}
       {activeDrawerLead && (
@@ -916,6 +1037,12 @@ export default function OutreachEngineDashboard() {
                       <MousePointerClick className="w-3.5 h-3.5 text-blue-600" />
                       <span>Link Clicks ({activeDrawerLead.clicks.length})</span>
                     </h3>
+                    <button
+                      onClick={() => openClicksModal(activeDrawerLead.id)}
+                      className="text-[11px] text-blue-600 hover:underline"
+                    >
+                      View Details
+                    </button>
                   </div>
                   <div className="space-y-1.5">
                     {activeDrawerLead.clicks.map(c => (
@@ -1120,7 +1247,7 @@ export default function OutreachEngineDashboard() {
                     />
                     <label htmlFor="utm-tracking-check" className="text-xs text-gray-700 font-medium flex items-center gap-1 cursor-pointer">
                       <Sparkles className="w-3 h-3 text-gray-500" />
-                      <span>Disguise links with UTM parameters (utm_source=outreach&utm_campaign=...)</span>
+                      <span>Disguise all links with UTM parameters (utm_source=outreach&utm_campaign=...)</span>
                     </label>
                   </div>
                 </div>

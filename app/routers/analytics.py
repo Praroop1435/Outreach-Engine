@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlmodel import Session, select, func, col
 from datetime import datetime, timedelta
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from app.db import get_session
-from app.models import Lead, EmailMessage, LeadStatus, EmailDirection
+from app.models import Lead, EmailMessage, LeadStatus, EmailDirection, LinkClick
 
 router = APIRouter(prefix="/api/analytics", tags=["Analytics"])
 
@@ -47,10 +47,15 @@ def get_analytics_overview(session: Session = Depends(get_session)) -> Dict[str,
         select(func.count(EmailMessage.id)).where(EmailMessage.direction == EmailDirection.RECEIVED.value)
     ).one() or 0
 
+    # Total link clicks tracked
+    total_link_clicks = session.exec(
+        select(func.count(LinkClick.id))
+    ).one() or 0
+
     # Reply rate
     reply_rate = round((replied_count / contacted_count * 100), 1) if contacted_count > 0 else 0.0
 
-    # Follow-ups due (contacted over 3 days ago without reply or explicit follow_up_due_at <= now)
+    # Follow-ups due
     three_days_ago = datetime.utcnow() - timedelta(days=3)
     follow_up_needed = session.exec(
         select(func.count(Lead.id)).where(
@@ -59,11 +64,6 @@ def get_analytics_overview(session: Session = Depends(get_session)) -> Dict[str,
             Lead.last_contacted_at <= three_days_ago
         )
     ).one() or 0
-
-    # Recent 5 activity logs
-    recent_messages = session.exec(
-        select(EmailMessage).order_by(col(EmailMessage.sent_at).desc()).limit(6)
-    ).all()
 
     return {
         "total_leads": total_leads,
@@ -74,18 +74,37 @@ def get_analytics_overview(session: Session = Depends(get_session)) -> Dict[str,
         "follow_up_needed": follow_up_needed,
         "total_sent_emails": total_sent_emails,
         "total_received_emails": total_received_emails,
-        "reply_rate": reply_rate,
-        "recent_messages": [
-            {
-                "id": m.id,
-                "lead_id": m.lead_id,
-                "direction": m.direction,
-                "sender": m.sender,
-                "recipient": m.recipient,
-                "subject": m.subject,
-                "snippet": m.snippet,
-                "sent_at": m.sent_at.isoformat() if m.sent_at else None
-            }
-            for m in recent_messages
-        ]
+        "total_link_clicks": total_link_clicks,
+        "reply_rate": reply_rate
     }
+
+@router.get("/clicks")
+def get_all_clicks(
+    lead_id: Optional[int] = Query(None),
+    limit: int = Query(50, le=100),
+    session: Session = Depends(get_session)
+) -> List[Dict[str, Any]]:
+    query = select(LinkClick, Lead).join(Lead, LinkClick.lead_id == Lead.id, isouter=True)
+    if lead_id:
+        query = query.where(LinkClick.lead_id == lead_id)
+    
+    query = query.order_by(col(LinkClick.clicked_at).desc()).limit(limit)
+    results = session.exec(query).all()
+
+    click_list = []
+    for click, lead in results:
+        click_list.append({
+            "id": click.id,
+            "lead_id": click.lead_id,
+            "lead_name": f"{lead.first_name or ''} {lead.last_name or ''}".strip() if lead else "Unknown Prospect",
+            "lead_email": lead.email if lead else "—",
+            "lead_company": lead.company if lead else "—",
+            "target_url": click.target_url,
+            "utm_source": click.utm_source,
+            "utm_campaign": click.utm_campaign,
+            "utm_content": click.utm_content,
+            "clicked_at": click.clicked_at.isoformat() if click.clicked_at else None,
+            "ip_address": click.ip_address,
+            "user_agent": click.user_agent
+        })
+    return click_list
