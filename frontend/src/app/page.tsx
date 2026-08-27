@@ -443,14 +443,6 @@ export default function OutreachEngineDashboard() {
 
           <div className="flex items-center gap-2.5">
             <button
-              onClick={handleSyncMailbox}
-              disabled={isSyncing}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-60 transition"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-              <span>{isSyncing ? 'Syncing...' : 'Sync Mailbox'}</span>
-            </button>
-            <button
               onClick={() => setIsImportModalOpen(true)}
               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition"
             >
