@@ -5,8 +5,11 @@ let activeStatusFilter = 'ALL';
 let activeSearchQuery = '';
 let activeLeadForDrawer = null;
 let activeLeadForCompose = null;
+let activeComposeChannel = 'EMAIL'; // 'EMAIL' or 'X_DM'
+let xConnectionStatus = { connected: false, username: null };
 
 document.addEventListener('DOMContentLoaded', () => {
+  checkXAuthStatus();
   loadTemplates();
   loadAnalytics();
   loadLeads();
@@ -22,7 +25,34 @@ function showToast(message, type = 'success') {
   setTimeout(() => {
     toast.style.opacity = '0';
     setTimeout(() => toast.remove(), 200);
-  }, 3500);
+  }, 4000);
+}
+
+// Check X (Twitter) Connection Status
+async function checkXAuthStatus() {
+  try {
+    const res = await fetch('/api/auth/x/status');
+    if (!res.ok) return;
+    const data = await res.json();
+    xConnectionStatus = data;
+
+    const badgeContainer = document.getElementById('x-auth-badge-container');
+    if (data.connected && data.username) {
+      badgeContainer.innerHTML = `
+        <span style="font-size: 11px; background: #f3f4f6; padding: 3px 8px; border-radius: 4px; border: 1px solid var(--border-color); color: var(--text-main); font-weight: 500;">
+          🐦 @${escapeHtml(data.username)}
+        </span>
+      `;
+    } else {
+      badgeContainer.innerHTML = `
+        <a href="/api/auth/x/login" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 2px 8px;">
+          🐦 Connect X
+        </a>
+      `;
+    }
+  } catch (err) {
+    console.error('Error checking X auth:', err);
+  }
 }
 
 // Fetch Analytics / KPI Summary
@@ -34,7 +64,7 @@ async function loadAnalytics() {
 
     document.getElementById('kpi-total').textContent = data.total_leads;
     document.getElementById('kpi-contacted').textContent = data.contacted_count;
-    document.getElementById('kpi-sent-emails').textContent = `${data.total_sent_emails} sent emails`;
+    document.getElementById('kpi-sent-emails').textContent = `${data.total_sent_emails} sent messages`;
     document.getElementById('kpi-replied').textContent = data.replied_count;
     document.getElementById('kpi-reply-rate').textContent = `${data.reply_rate}% reply rate`;
     document.getElementById('kpi-followup').textContent = data.follow_up_needed;
@@ -56,7 +86,7 @@ async function loadTemplates() {
     if (!res.ok) return;
     currentTemplates = await res.json();
     const select = document.getElementById('compose-template-select');
-    select.innerHTML = '<option value="">-- Custom Email --</option>';
+    select.innerHTML = '<option value="">-- Custom Outreach --</option>';
     currentTemplates.forEach(t => {
       const opt = document.createElement('option');
       opt.value = t.id;
@@ -105,6 +135,10 @@ function renderLeadsTable(leads) {
     const statusClass = `badge-${lead.status.toLowerCase().replace(/_/g, '-')}`;
     const formattedStatus = lead.status.replace(/_/g, ' ').toLowerCase();
 
+    const xHandleHtml = lead.x_handle 
+      ? `<div style="font-size: 11px; color: #1d9bf0; margin-top: 2px;">🐦 ${escapeHtml(lead.x_handle)}</div>`
+      : '';
+
     let lastContactedStr = '—';
     if (lead.last_contacted_at) {
       const d = new Date(lead.last_contacted_at);
@@ -122,6 +156,7 @@ function renderLeadsTable(leads) {
         </td>
         <td>
           <div class="lead-email">${escapeHtml(lead.email)}</div>
+          ${xHandleHtml}
         </td>
         <td>
           <span class="badge ${statusClass}">${formattedStatus}</span>
@@ -135,7 +170,7 @@ function renderLeadsTable(leads) {
         <td>
           <div class="actions-cell">
             <button class="btn btn-secondary btn-sm" onclick="openLeadDrawer(${lead.id})">History</button>
-            <button class="btn btn-primary btn-sm" onclick="openComposeModalForLead(${lead.id})">Email</button>
+            <button class="btn btn-primary btn-sm" onclick="openComposeModalForLead(${lead.id})">Message</button>
             <button class="btn btn-secondary btn-sm" onclick="openEditLeadModal(${lead.id})">Edit</button>
             <button class="btn btn-danger btn-sm" onclick="deleteLead(${lead.id})">&times;</button>
           </div>
@@ -180,7 +215,7 @@ async function handleMailboxSync() {
     if (!res.ok) throw new Error(data.detail || 'Sync failed');
 
     const s = data.stats || {};
-    showToast(`Synced! ${s.sent_synced || 0} sent emails, ${s.new_leads_created || 0} new leads, ${s.new_replies_detected || 0} replies.`);
+    showToast(`Synced! ${s.sent_synced || 0} sent emails synced.`);
     loadAnalytics();
     loadLeads();
   } catch (err) {
@@ -204,6 +239,7 @@ async function openLeadDrawer(leadId) {
     document.getElementById('drawer-name').textContent = fullName;
     document.getElementById('drawer-role-company').textContent = `${lead.role || 'No Role'} • ${lead.company || 'No Company'}`;
     document.getElementById('drawer-email').textContent = lead.email;
+    document.getElementById('drawer-x-handle').textContent = lead.x_handle || 'None';
     document.getElementById('drawer-custom-hook').textContent = lead.custom_hook || 'None';
     document.getElementById('drawer-notes').textContent = lead.notes || 'None';
 
@@ -215,15 +251,17 @@ async function openLeadDrawer(leadId) {
 
     const threadList = document.getElementById('drawer-thread-list');
     if (!lead.messages || lead.messages.length === 0) {
-      threadList.innerHTML = '<div style="text-align: center; color: var(--text-muted); font-size: 13px; padding: 20px;">No email messages found.</div>';
+      threadList.innerHTML = '<div style="text-align: center; color: var(--text-muted); font-size: 13px; padding: 20px;">No messages exchanged yet.</div>';
     } else {
       threadList.innerHTML = lead.messages.map(m => {
         const isSent = m.direction === 'SENT';
+        const isXDM = m.channel === 'X_DM';
         const dateStr = new Date(m.sent_at).toLocaleString();
+        const channelBadge = isXDM ? '🐦 X DM' : '📧 Email';
         return `
           <div class="message-bubble ${isSent ? 'sent' : 'received'}">
             <div class="message-header">
-              <span><strong>${isSent ? 'Sent to' : 'Received from'}:</strong> ${escapeHtml(isSent ? m.recipient : m.sender)}</span>
+              <span><strong>${isSent ? 'Sent to' : 'Received from'}:</strong> ${escapeHtml(isSent ? m.recipient : m.sender)} (${channelBadge})</span>
               <span>${dateStr}</span>
             </div>
             <div class="message-subject">${escapeHtml(m.subject)}</div>
@@ -256,16 +294,37 @@ function openComposeFromDrawer() {
   }
 }
 
-// Email Compose Modal
+// Multi-Channel Compose Modal
+function setComposeChannel(channel) {
+  activeComposeChannel = channel;
+  const isEmail = channel === 'EMAIL';
+
+  document.getElementById('btn-channel-email').classList.toggle('active', isEmail);
+  document.getElementById('btn-channel-xdm').classList.toggle('active', !isEmail);
+
+  document.getElementById('group-compose-subject').style.display = isEmail ? 'block' : 'none';
+  document.getElementById('group-compose-x-handle').style.display = isEmail ? 'none' : 'block';
+
+  document.getElementById('compose-recipient-label').textContent = isEmail ? 'Recipient Email' : 'Email on File';
+  document.getElementById('compose-body-label').textContent = isEmail ? 'Message Body' : 'Direct Message Pitch (X DM)';
+  document.getElementById('btn-send-email-action').textContent = isEmail ? 'Send via Gmail' : 'Send via X (Twitter)';
+
+  applySelectedTemplate();
+}
+
 function openComposeModalForLead(leadId) {
   const lead = currentLeads.find(l => l.id === leadId) || activeLeadForDrawer;
   if (!lead) return;
   activeLeadForCompose = lead;
 
   document.getElementById('compose-to').value = `${lead.first_name || ''} <${lead.email}>`.trim();
+  document.getElementById('compose-x-handle').value = lead.x_handle || '';
   document.getElementById('compose-template-select').value = '';
   document.getElementById('compose-subject').value = '';
   document.getElementById('compose-body').value = '';
+
+  // Default to Email channel
+  setComposeChannel('EMAIL');
 
   // Select default first template if available
   if (currentTemplates.length > 0) {
@@ -304,41 +363,86 @@ function applySelectedTemplate() {
   document.getElementById('compose-body').value = replaceVars(tmpl.body_template);
 }
 
-async function executeSendEmail() {
+async function executeSendMessage() {
   if (!activeLeadForCompose) return;
-  const subject = document.getElementById('compose-subject').value.trim();
-  const body = document.getElementById('compose-body').value.trim();
   const sendBtn = document.getElementById('btn-send-email-action');
+  const body = document.getElementById('compose-body').value.trim();
 
-  if (!subject || !body) {
-    showToast('Please provide both subject and message body', 'error');
+  if (!body) {
+    showToast('Please enter your outreach message', 'error');
     return;
   }
 
-  sendBtn.disabled = true;
-  sendBtn.textContent = 'Sending...';
-
-  try {
-    const res = await fetch(`/api/leads/${activeLeadForCompose.id}/send`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ subject, body })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Sending failed');
-
-    showToast(`Email successfully sent to ${activeLeadForCompose.email}!`);
-    closeComposeModal();
-    if (activeLeadForDrawer && activeLeadForDrawer.id === activeLeadForCompose.id) {
-      openLeadDrawer(activeLeadForCompose.id);
+  if (activeComposeChannel === 'EMAIL') {
+    const subject = document.getElementById('compose-subject').value.trim();
+    if (!subject) {
+      showToast('Please provide an email subject', 'error');
+      return;
     }
-    loadAnalytics();
-    loadLeads();
-  } catch (err) {
-    showToast(err.message, 'error');
-  } finally {
-    sendBtn.disabled = false;
-    sendBtn.textContent = 'Send via Gmail';
+
+    sendBtn.disabled = true;
+    sendBtn.textContent = 'Sending...';
+
+    try {
+      const res = await fetch(`/api/leads/${activeLeadForCompose.id}/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subject, body })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Email sending failed');
+
+      showToast(`Email successfully sent to ${activeLeadForCompose.email}!`);
+      closeComposeModal();
+      if (activeLeadForDrawer && activeLeadForDrawer.id === activeLeadForCompose.id) {
+        openLeadDrawer(activeLeadForCompose.id);
+      }
+      loadAnalytics();
+      loadLeads();
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      sendBtn.disabled = false;
+      sendBtn.textContent = 'Send via Gmail';
+    }
+  } else {
+    // X (Twitter) Direct Message Channel
+    const xHandle = document.getElementById('compose-x-handle').value.trim();
+    if (!xHandle) {
+      showToast('Please provide a target X Handle (e.g. @username)', 'error');
+      return;
+    }
+
+    if (!xConnectionStatus.connected) {
+      showToast('Please click "Connect X" in the top bar to authorize your X account first!', 'error');
+      return;
+    }
+
+    sendBtn.disabled = true;
+    sendBtn.textContent = 'Dispatching X DM...';
+
+    try {
+      const res = await fetch(`/api/auth/x/leads/${activeLeadForCompose.id}/send-dm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: body, x_handle: xHandle })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'X DM sending failed');
+
+      showToast(`X DM successfully sent to ${xHandle}!`);
+      closeComposeModal();
+      if (activeLeadForDrawer && activeLeadForDrawer.id === activeLeadForCompose.id) {
+        openLeadDrawer(activeLeadForCompose.id);
+      }
+      loadAnalytics();
+      loadLeads();
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      sendBtn.disabled = false;
+      sendBtn.textContent = 'Send via X (Twitter)';
+    }
   }
 }
 
@@ -349,6 +453,7 @@ function openNewLeadModal() {
   document.getElementById('lead-form-first-name').value = '';
   document.getElementById('lead-form-last-name').value = '';
   document.getElementById('lead-form-email').value = '';
+  document.getElementById('lead-form-x-handle').value = '';
   document.getElementById('lead-form-company').value = '';
   document.getElementById('lead-form-role').value = '';
   document.getElementById('lead-form-status').value = 'NOT_CONTACTED';
@@ -367,6 +472,7 @@ function openEditLeadModal(leadId) {
   document.getElementById('lead-form-first-name').value = lead.first_name || '';
   document.getElementById('lead-form-last-name').value = lead.last_name || '';
   document.getElementById('lead-form-email').value = lead.email || '';
+  document.getElementById('lead-form-x-handle').value = lead.x_handle || '';
   document.getElementById('lead-form-company').value = lead.company || '';
   document.getElementById('lead-form-role').value = lead.role || '';
   document.getElementById('lead-form-status').value = lead.status || 'NOT_CONTACTED';
@@ -394,6 +500,7 @@ async function saveLeadForm() {
     last_name: document.getElementById('lead-form-last-name').value.trim(),
     company: document.getElementById('lead-form-company').value.trim(),
     role: document.getElementById('lead-form-role').value.trim(),
+    x_handle: document.getElementById('lead-form-x-handle').value.trim(),
     status: document.getElementById('lead-form-status').value,
     custom_hook: document.getElementById('lead-form-custom-hook').value.trim(),
     notes: document.getElementById('lead-form-notes').value.trim()

@@ -7,7 +7,7 @@ import os
 
 from app.config import settings
 from app.db import init_db
-from app.routers import leads, templates, sync, analytics
+from app.routers import leads, templates, sync, analytics, twitter
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -34,6 +34,7 @@ app.include_router(leads.router)
 app.include_router(templates.router)
 app.include_router(sync.router)
 app.include_router(analytics.router)
+app.include_router(twitter.router)
 
 # Mount Static UI Files
 static_dir = os.path.join(os.path.dirname(__file__), "static")

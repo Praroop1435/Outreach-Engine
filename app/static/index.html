@@ -14,6 +14,11 @@
       <div class="brand">
         <h1>Outreach Engine</h1>
         <span class="user-email" id="header-user-email">anandpraroop@gmail.com</span>
+        <div id="x-auth-badge-container">
+          <a href="/api/auth/x/login" class="btn btn-secondary btn-sm" id="btn-connect-x" style="font-size: 11px; padding: 2px 8px;">
+            🐦 Connect X
+          </a>
+        </div>
       </div>
       <div class="header-actions">
         <button class="btn btn-secondary" id="btn-sync-mailbox" onclick="handleMailboxSync()">
@@ -38,7 +43,7 @@
       <div class="kpi-card">
         <div class="kpi-label">Contacted</div>
         <div class="kpi-value" id="kpi-contacted">0</div>
-        <div class="kpi-sub" id="kpi-sent-emails">0 sent emails</div>
+        <div class="kpi-sub" id="kpi-sent-emails">0 sent messages</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-label">Replies Received</div>
@@ -63,7 +68,7 @@
       </div>
 
       <div class="search-box">
-        <input type="text" class="search-input" id="search-input" placeholder="Search by name, company, email..." oninput="handleSearch(this.value)">
+        <input type="text" class="search-input" id="search-input" placeholder="Search by name, company, handle, email..." oninput="handleSearch(this.value)">
       </div>
     </div>
 
@@ -74,10 +79,10 @@
           <tr>
             <th>Name & Title</th>
             <th>Company</th>
-            <th>Email</th>
+            <th>Email & X Handle</th>
             <th>Status</th>
             <th>Last Contacted</th>
-            <th>Threads</th>
+            <th>Messages</th>
             <th style="text-align: right;">Actions</th>
           </tr>
         </thead>
@@ -108,6 +113,10 @@
             <div class="meta-value" id="drawer-email">-</div>
           </div>
           <div class="meta-row">
+            <div class="meta-label">X Handle:</div>
+            <div class="meta-value" id="drawer-x-handle">-</div>
+          </div>
+          <div class="meta-row">
             <div class="meta-label">Status:</div>
             <div class="meta-value" id="drawer-status-badge">-</div>
           </div>
@@ -122,8 +131,8 @@
         </div>
 
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px;">
-          <h3 style="font-size: 14px; font-weight: 600;">Email History (<span id="drawer-msg-count">0</span>)</h3>
-          <button class="btn btn-primary btn-sm" onclick="openComposeFromDrawer()">Send Email</button>
+          <h3 style="font-size: 14px; font-weight: 600;">Message History (<span id="drawer-msg-count">0</span>)</h3>
+          <button class="btn btn-primary btn-sm" onclick="openComposeFromDrawer()">Send Message</button>
         </div>
 
         <div class="thread-container" id="drawer-thread-list">
@@ -133,36 +142,61 @@
     </div>
   </div>
 
-  <!-- Email Compose Modal -->
+  <!-- Multi-Channel Compose Modal (Email / X DM) -->
   <div class="modal-overlay" id="modal-compose">
     <div class="modal-card">
       <div class="modal-header">
-        <h3 id="compose-modal-title">Send Outreach Email</h3>
+        <h3 id="compose-modal-title">Send Outreach</h3>
         <button class="modal-close" onclick="closeComposeModal()">&times;</button>
       </div>
       <div class="modal-body">
+        
+        <!-- Channel Selector -->
+        <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+          <button type="button" class="btn btn-secondary btn-sm channel-btn active" id="btn-channel-email" onclick="setComposeChannel('EMAIL')">
+            📧 Email (Gmail)
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm channel-btn" id="btn-channel-xdm" onclick="setComposeChannel('X_DM')">
+            🐦 X Direct Message
+          </button>
+        </div>
+
+        <!-- Recipient display -->
         <div class="form-group">
-          <label>Recipient</label>
+          <label id="compose-recipient-label">Recipient Email</label>
           <input type="text" class="form-control" id="compose-to" readonly style="background: var(--bg-secondary);">
         </div>
+
+        <!-- X Handle input (when X_DM selected) -->
+        <div class="form-group" id="group-compose-x-handle" style="display: none;">
+          <label>Target X Handle (Username without @ or URL)</label>
+          <input type="text" class="form-control" id="compose-x-handle" placeholder="e.g. jerry_ai or https://x.com/jerry_ai">
+        </div>
+
+        <!-- Template Selector -->
         <div class="form-group">
           <label>Choose Template</label>
           <select class="form-control" id="compose-template-select" onchange="applySelectedTemplate()">
-            <option value="">-- Custom Email --</option>
+            <option value="">-- Custom Outreach --</option>
           </select>
         </div>
-        <div class="form-group">
+
+        <!-- Subject field (for Email) -->
+        <div class="form-group" id="group-compose-subject">
           <label>Subject</label>
           <input type="text" class="form-control" id="compose-subject" placeholder="Email subject...">
         </div>
+
+        <!-- Message Body -->
         <div class="form-group">
-          <label>Message Body</label>
-          <textarea class="form-control" id="compose-body" rows="9" placeholder="Write your personalized email..."></textarea>
+          <label id="compose-body-label">Message Body</label>
+          <textarea class="form-control" id="compose-body" rows="8" placeholder="Write your personalized outreach pitch..."></textarea>
         </div>
+
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" onclick="closeComposeModal()">Cancel</button>
-        <button class="btn btn-primary" id="btn-send-email-action" onclick="executeSendEmail()">
+        <button class="btn btn-primary" id="btn-send-email-action" onclick="executeSendMessage()">
           Send via Gmail
         </button>
       </div>
@@ -188,9 +222,15 @@
             <input type="text" class="form-control" id="lead-form-last-name" placeholder="Smith">
           </div>
         </div>
-        <div class="form-group">
-          <label>Email Address *</label>
-          <input type="email" class="form-control" id="lead-form-email" placeholder="alex@company.com" required>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Email Address *</label>
+            <input type="email" class="form-control" id="lead-form-email" placeholder="alex@company.com" required>
+          </div>
+          <div class="form-group">
+            <label>X (Twitter) Handle</label>
+            <input type="text" class="form-control" id="lead-form-x-handle" placeholder="@alex_ai">
+          </div>
         </div>
         <div class="form-row">
           <div class="form-group">
@@ -238,13 +278,13 @@
       </div>
       <div class="modal-body">
         <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 12px;">
-          Paste CSV text from your Google Sheet or export. Columns like <strong>Email, Name/First Name, Company, Role, Custom Hook, Notes</strong> are automatically detected.
+          Paste CSV text from your Google Sheet or export. Columns like <strong>Email, Name/First Name, Company, Role, X Handle/Twitter, Custom Hook, Notes</strong> are automatically detected.
         </p>
         <div class="form-group">
           <label>CSV Data</label>
-          <textarea class="form-control" id="import-csv-textarea" rows="10" placeholder="Name, Company, Email, Role, Custom Hook
-Jerry, Lemma AI, jerry@uselemma.ai, Founder, your production agent framework
-David, Xpander AI, david@xpander.ai, CEO, reliable agent infrastructure"></textarea>
+          <textarea class="form-control" id="import-csv-textarea" rows="10" placeholder="Name, Company, Email, X Handle, Role, Custom Hook
+Jerry, Lemma AI, jerry@uselemma.ai, @jerry_lemma, Founder, your production agent framework
+David, Xpander AI, david@xpander.ai, @david_xpander, CEO, reliable agent infrastructure"></textarea>
         </div>
       </div>
       <div class="modal-footer">

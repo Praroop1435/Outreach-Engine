@@ -14,6 +14,10 @@ class LeadStatus(str, Enum):
     BOUNCED = "BOUNCED"
     ARCHIVED = "ARCHIVED"
 
+class MessageChannel(str, Enum):
+    EMAIL = "EMAIL"
+    X_DM = "X_DM"
+
 class EmailDirection(str, Enum):
     SENT = "SENT"
     RECEIVED = "RECEIVED"
@@ -27,6 +31,7 @@ class Lead(SQLModel, table=True):
     last_name: Optional[str] = None
     company: Optional[str] = Field(default=None, index=True)
     role: Optional[str] = None
+    x_handle: Optional[str] = Field(default=None, index=True)
     website_url: Optional[str] = None
     linkedin_url: Optional[str] = None
     status: str = Field(default=LeadStatus.NOT_CONTACTED.value, index=True)
@@ -45,6 +50,7 @@ class EmailMessage(SQLModel, table=True):
     lead_id: Optional[int] = Field(default=None, foreign_key="lead.id", index=True)
     message_id: Optional[str] = Field(default=None, index=True)
     thread_id: Optional[str] = None
+    channel: str = Field(default=MessageChannel.EMAIL.value, index=True)
     direction: str = Field(default=EmailDirection.SENT.value)
     sender: str
     recipient: str
@@ -71,6 +77,7 @@ class LeadCreate(BaseModel):
     last_name: Optional[str] = None
     company: Optional[str] = None
     role: Optional[str] = None
+    x_handle: Optional[str] = None
     website_url: Optional[str] = None
     linkedin_url: Optional[str] = None
     status: Optional[str] = LeadStatus.NOT_CONTACTED.value
@@ -84,6 +91,7 @@ class LeadUpdate(BaseModel):
     last_name: Optional[str] = None
     company: Optional[str] = None
     role: Optional[str] = None
+    x_handle: Optional[str] = None
     website_url: Optional[str] = None
     linkedin_url: Optional[str] = None
     status: Optional[str] = None
@@ -98,6 +106,7 @@ class LeadRead(BaseModel):
     last_name: Optional[str]
     company: Optional[str]
     role: Optional[str]
+    x_handle: Optional[str] = None
     website_url: Optional[str]
     linkedin_url: Optional[str]
     status: str
@@ -117,6 +126,10 @@ class SendEmailRequest(BaseModel):
     subject: str
     body: str
     template_id: Optional[int] = None
+
+class SendXDMRequest(BaseModel):
+    message: str
+    x_handle: Optional[str] = None
 
 class EmailPreviewRequest(BaseModel):
     lead_id: int
