@@ -17,11 +17,6 @@ class Settings(BaseSettings):
     PORT: int = int(os.getenv("PORT", "8437"))
     RESUME_PATH: str = os.getenv("RESUME_PATH", "/Users/praroopanand/Documents/Resumes/Praroop_Anand.pdf")
 
-    # X / Twitter OAuth 2.0 Settings
-    X_CLIENT_ID: str = os.getenv("X_CLIENT_ID", "")
-    X_CLIENT_SECRET: str = os.getenv("X_CLIENT_SECRET", "")
-    X_REDIRECT_URI: str = os.getenv("X_REDIRECT_URI", "http://localhost:8437/api/auth/x/callback")
-
     class Config:
         env_file = ".env"
         extra = "ignore"
