@@ -1,9 +1,6 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-import os
 
 from app.config import settings
 from app.db import init_db
@@ -16,7 +13,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.APP_NAME,
-    description="Clean, minimalist Personal Outreach Engine with SQLite, Pydantic, Gmail SMTP/IMAP sync",
+    description="Personal Outreach Engine REST API",
     version="1.0.0",
     lifespan=lifespan
 )
@@ -36,14 +33,9 @@ app.include_router(sync.router)
 app.include_router(analytics.router)
 app.include_router(twitter.router)
 
-# Mount Static UI Files
-static_dir = os.path.join(os.path.dirname(__file__), "static")
-os.makedirs(static_dir, exist_ok=True)
-app.mount("/static", StaticFiles(directory=static_dir), name="static")
-
 @app.get("/")
-def serve_ui():
-    return FileResponse(os.path.join(static_dir, "index.html"))
+def root():
+    return {"message": "Personal Outreach Engine API is running", "docs": "/docs"}
 
 @app.get("/health")
 def health_check():
