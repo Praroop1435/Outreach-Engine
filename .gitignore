@@ -1,3 +1,6 @@
 .env
 .venv
 All for One GCP.json
+outreach.db
+*.db
+__pycache__/
