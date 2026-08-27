@@ -9,7 +9,8 @@ from app.services.twitter_service import (
     get_authorization_url,
     exchange_code_for_token,
     get_x_connection_status,
-    send_x_direct_message
+    send_x_direct_message,
+    sync_x_dms_to_leads
 )
 from app.services.email_sender import render_template
 
@@ -59,3 +60,16 @@ def send_dm_to_lead(lead_id: int, req: SendXDMRequest, session: Session = Depend
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/sync")
+def sync_x_messages(session: Session = Depends(get_session)):
+    try:
+        stats = sync_x_dms_to_leads(session=session, exclude_keywords=["anjan", "piyush"])
+        return {
+            "ok": True,
+            "message": f"X DMs synced: {stats.get('created', 0)} new contacts created, {stats.get('updated', 0)} updated (skipped friends: {stats.get('skipped', 0)}).",
+            "stats": stats
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+

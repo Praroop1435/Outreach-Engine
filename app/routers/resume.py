@@ -50,8 +50,18 @@ async def upload_resume(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
     
     path = get_resume_path()
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    resume_dir = os.path.dirname(path)
+    os.makedirs(resume_dir, exist_ok=True)
     
+    # Remove previous files in resume folder
+    for existing_file in os.listdir(resume_dir):
+        file_to_del = os.path.join(resume_dir, existing_file)
+        if os.path.isfile(file_to_del):
+            try:
+                os.remove(file_to_del)
+            except Exception:
+                pass
+
     # Save to target path
     with open(path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)

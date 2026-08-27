@@ -19,7 +19,8 @@ import {
   Layers,
   Sparkles,
   ExternalLink,
-  MousePointerClick
+  MousePointerClick,
+  RefreshCw
 } from 'lucide-react';
 
 interface EmailMessage {
@@ -244,6 +245,23 @@ export default function OutreachEngineDashboard() {
       showToast(err.message, 'error');
     } finally {
       if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  // Sync X DMs Handler
+  const [isSyncingX, setIsSyncingX] = useState(false);
+  const handleSyncXDMs = async () => {
+    setIsSyncingX(true);
+    try {
+      const res = await fetch('/api/auth/x/sync', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'X DM sync failed');
+      showToast(data.message || 'X DMs synced!');
+      fetchData();
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    } finally {
+      setIsSyncingX(false);
     }
   };
 
@@ -628,9 +646,20 @@ export default function OutreachEngineDashboard() {
             </div>
 
             {xStatus.connected && xStatus.username ? (
-              <span className="text-xs text-gray-700 bg-gray-50 px-2.5 py-1 rounded border border-gray-200 font-medium">
-                X: @{xStatus.username}
-              </span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-gray-700 bg-gray-50 px-2.5 py-1 rounded border border-gray-200 font-medium">
+                  X: @{xStatus.username}
+                </span>
+                <button
+                  onClick={handleSyncXDMs}
+                  disabled={isSyncingX}
+                  className="text-xs text-gray-700 hover:text-black bg-white hover:bg-gray-50 px-2.5 py-1 rounded border border-gray-300 font-medium transition flex items-center gap-1 disabled:opacity-60"
+                  title="Sync outreach DMs from X (skipping friends)"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isSyncingX ? 'animate-spin' : ''}`} />
+                  <span>{isSyncingX ? 'Syncing...' : 'Sync X DMs'}</span>
+                </button>
+              </div>
             ) : (
               <a
                 href="/api/auth/x/login"

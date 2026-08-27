@@ -7,7 +7,7 @@ import time
 from typing import Optional, Dict, Any
 from datetime import datetime
 import httpx
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.config import settings
 from app.models import Lead, EmailMessage, LeadStatus, EmailDirection, MessageChannel
@@ -261,3 +261,90 @@ def send_x_direct_message(session: Session, lead: Lead, message_text: str, custo
     session.refresh(lead)
 
     return msg_record
+
+def sync_x_dms_to_leads(session: Session, exclude_keywords: list[str] = ["anjan", "piyush"]) -> dict:
+    """Syncs sent X Direct Messages into the Lead table, skipping excluded contacts."""
+    token = get_valid_access_token()
+    my_status = get_x_connection_status()
+    my_user_id = my_status.get("user_id")
+
+    headers = {"Authorization": f"Bearer {token}"}
+    params = {
+        "dm_event.fields": "id,text,created_at,sender_id,dm_conversation_id",
+        "expansions": "sender_id,participant_ids",
+        "user.fields": "id,name,username,description",
+        "max_results": 50
+    }
+
+    with httpx.Client() as client:
+        res = client.get("https://api.twitter.com/2/dm_events", headers=headers, params=params)
+        if res.status_code != 200:
+            err_data = res.json() if "application/json" in res.headers.get("content-type", "") else {}
+            detail = err_data.get("detail") or res.text
+            raise ValueError(f"X API error ({res.status_code}): {detail}")
+        
+        data = res.json()
+        events = data.get("data", [])
+        users_list = data.get("includes", {}).get("users", [])
+        user_map = {u["id"]: u for u in users_list}
+
+        created = 0
+        updated = 0
+        skipped = 0
+
+        for event in events:
+            text = event.get("text", "")
+            sender_id = event.get("sender_id")
+            other_user_ids = [uid for uid in user_map.keys() if uid != my_user_id]
+            for uid in other_user_ids:
+                u_obj = user_map.get(uid)
+                if not u_obj:
+                    continue
+                username = u_obj.get("username", "").lower()
+                name = u_obj.get("name", "").lower()
+
+                # Check exclusions (e.g. anjan, piyush)
+                if any(ex.lower() in username or ex.lower() in name for ex in exclude_keywords):
+                    skipped += 1
+                    continue
+
+                existing = session.exec(select(Lead).where(
+                    (Lead.x_handle == f"@{u_obj.get('username')}") | 
+                    (Lead.email == f"{u_obj.get('username')}@x.com")
+                )).first()
+
+                if not existing:
+                    lead = Lead(
+                        email=f"{u_obj.get('username')}@x.com",
+                        first_name=u_obj.get("name", "").split(" ")[0] or u_obj.get("username"),
+                        last_name=" ".join(u_obj.get("name", "").split(" ")[1:]) if " " in u_obj.get("name", "") else "",
+                        x_handle=f"@{u_obj.get('username')}",
+                        company="X / Twitter Prospect",
+                        source="X Direct Message",
+                        status=LeadStatus.CONTACTED.value,
+                        notes=u_obj.get("description", "")
+                    )
+                    session.add(lead)
+                    session.commit()
+                    session.refresh(lead)
+                    created += 1
+                else:
+                    lead = existing
+                    updated += 1
+
+                is_me_sender = (sender_id == my_user_id)
+                msg_rec = EmailMessage(
+                    lead_id=lead.id,
+                    channel=MessageChannel.X_DM.value,
+                    direction=EmailDirection.SENT.value if is_me_sender else EmailDirection.RECEIVED.value,
+                    sender=f"@{my_status.get('username')}" if is_me_sender else f"@{u_obj.get('username')}",
+                    recipient=f"@{u_obj.get('username')}" if is_me_sender else f"@{my_status.get('username')}",
+                    subject=f"X DM with @{u_obj.get('username')}",
+                    snippet=text[:200].strip(),
+                    body_text=text,
+                    message_id=event.get("id")
+                )
+                session.add(msg_rec)
+                session.commit()
+
+        return {"created": created, "updated": updated, "skipped": skipped, "total_events": len(events)}
