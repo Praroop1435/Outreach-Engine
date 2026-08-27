@@ -84,10 +84,10 @@ def parse_name(name_raw: str, email_str: str) -> tuple[str, str]:
         return parts[0].capitalize(), " ".join([p.capitalize() for p in parts[1:]])
     return "", ""
 
-def sync_mailbox(session: Session, max_messages: int = 150) -> Dict[str, Any]:
+def sync_mailbox(session: Session, max_messages: int = 150, auto_create_leads: bool = False) -> Dict[str, Any]:
     """
     Syncs Sent Mail and Inbox from Gmail IMAP with local SQLite database.
-    Updates lead statuses, adds new leads if found in Sent Mail, and logs all messages.
+    Updates lead statuses and logs all messages for existing outreach leads.
     """
     if not settings.GMAIL_APP_PASSWORD:
         raise ValueError("GMAIL_APP_PASSWORD is not set in .env")
@@ -155,6 +155,8 @@ def sync_mailbox(session: Session, max_messages: int = 150) -> Dict[str, Any]:
                         # Check if lead exists
                         lead = session.exec(select(Lead).where(Lead.email == recipient_email)).first()
                         if not lead:
+                            if not auto_create_leads:
+                                continue
                             first_n, last_n = parse_name(name_raw, recipient_email)
                             comp = infer_company_from_email(recipient_email)
                             lead = Lead(
