@@ -44,6 +44,7 @@ class Lead(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
     messages: List["EmailMessage"] = Relationship(back_populates="lead", cascade_delete=True)
+    clicks: List["LinkClick"] = Relationship(back_populates="lead", cascade_delete=True)
 
 class EmailMessage(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -60,6 +61,19 @@ class EmailMessage(SQLModel, table=True):
     sent_at: datetime = Field(default_factory=datetime.utcnow, index=True)
 
     lead: Optional[Lead] = Relationship(back_populates="messages")
+
+class LinkClick(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    lead_id: Optional[int] = Field(default=None, foreign_key="lead.id", index=True)
+    target_url: str
+    utm_source: str = "outreach"
+    utm_campaign: Optional[str] = None
+    utm_content: Optional[str] = None
+    clicked_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    ip_address: Optional[str] = None
+    user_agent: Optional[str] = None
+
+    lead: Optional[Lead] = Relationship(back_populates="clicks")
 
 class EmailTemplate(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -118,15 +132,18 @@ class LeadRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     message_count: Optional[int] = 0
+    click_count: Optional[int] = 0
 
 class LeadDetail(LeadRead):
     messages: List[EmailMessage] = []
+    clicks: List[LinkClick] = []
 
 class SendEmailRequest(BaseModel):
     subject: str
     body: str
     template_id: Optional[int] = None
     attach_resume: bool = True
+    enable_utm_tracking: bool = True
 
 class SendXDMRequest(BaseModel):
     message: str

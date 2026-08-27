@@ -9,7 +9,7 @@ from app.db import get_session
 from app.models import (
     Lead, LeadCreate, LeadUpdate, LeadRead, LeadDetail,
     SendEmailRequest, EmailPreviewRequest, ImportLeadsRequest,
-    EmailTemplate, EmailMessage
+    EmailTemplate, EmailMessage, LinkClick
 )
 from app.services.email_sender import send_email_to_lead, render_template
 from app.services.sheet_importer import import_leads_from_csv
@@ -88,10 +88,15 @@ def get_lead(lead_id: int, session: Session = Depends(get_session)):
     messages = session.exec(
         select(EmailMessage).where(EmailMessage.lead_id == lead_id).order_by(col(EmailMessage.sent_at).asc())
     ).all()
+    clicks = session.exec(
+        select(LinkClick).where(LinkClick.lead_id == lead_id).order_by(col(LinkClick.clicked_at).desc())
+    ).all()
     return LeadDetail(
         **lead.model_dump(),
         message_count=len(messages),
-        messages=messages
+        click_count=len(clicks),
+        messages=messages,
+        clicks=clicks
     )
 
 @router.put("/{lead_id}", response_model=LeadRead)
@@ -149,7 +154,8 @@ def send_email(lead_id: int, req: SendEmailRequest, session: Session = Depends(g
             lead=lead,
             subject=req.subject,
             body=req.body,
-            attach_resume=req.attach_resume
+            attach_resume=req.attach_resume,
+            enable_utm_tracking=req.enable_utm_tracking
         )
         return {
             "ok": True,

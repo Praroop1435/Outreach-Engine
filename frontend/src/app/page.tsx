@@ -17,7 +17,9 @@ import {
   AlertCircle,
   Paperclip,
   Layers,
-  Sparkles
+  Sparkles,
+  ExternalLink,
+  MousePointerClick
 } from 'lucide-react';
 
 interface EmailMessage {
@@ -33,6 +35,17 @@ interface EmailMessage {
   snippet?: string;
   body_text?: string;
   sent_at: string;
+}
+
+interface LinkClick {
+  id: number;
+  lead_id: number;
+  target_url: string;
+  utm_source: string;
+  utm_campaign?: string;
+  utm_content?: string;
+  clicked_at: string;
+  ip_address?: string;
 }
 
 interface Lead {
@@ -54,7 +67,9 @@ interface Lead {
   created_at: string;
   updated_at: string;
   message_count?: number;
+  click_count?: number;
   messages?: EmailMessage[];
+  clicks?: LinkClick[];
 }
 
 interface Template {
@@ -131,6 +146,7 @@ export default function OutreachEngineDashboard() {
   const [composeSubject, setComposeSubject] = useState('');
   const [composeBody, setComposeBody] = useState('');
   const [attachResume, setAttachResume] = useState(true);
+  const [enableUTMTracking, setEnableUTMTracking] = useState(true);
   const [isSending, setIsSending] = useState(false);
 
   // Lead Form state
@@ -249,6 +265,7 @@ export default function OutreachEngineDashboard() {
     setComposeXHandle(lead.x_handle || '');
     setComposeChannel('EMAIL');
     setAttachResume(true);
+    setEnableUTMTracking(true);
     setComposeTemplateId(templates.length > 0 ? String(templates[0].id) : '');
     
     if (templates.length > 0) {
@@ -304,12 +321,13 @@ export default function OutreachEngineDashboard() {
           body: JSON.stringify({ 
             subject: composeSubject, 
             body: composeBody,
-            attach_resume: attachResume 
+            attach_resume: attachResume,
+            enable_utm_tracking: enableUTMTracking
           })
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Email failed to send');
-        showToast(`Email sent to ${composeLead.email} with Praroop_Anand.pdf`);
+        showToast(`Email sent with UTM tracking & ${attachResume ? 'Praroop_Anand.pdf' : 'no attachment'}`);
       } else {
         // X DM
         if (!composeXHandle.trim()) {
@@ -640,7 +658,7 @@ export default function OutreachEngineDashboard() {
             </button>
             <button
               onClick={openNewLeadModal}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-gray-900 rounded hover:bg-black transition"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-gray-900 rounded hover:bg-black transition"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Add Contact</span>
@@ -861,6 +879,31 @@ export default function OutreachEngineDashboard() {
                 )}
               </div>
 
+              {/* Clicks tracking section */}
+              {activeDrawerLead.clicks && activeDrawerLead.clicks.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500 flex items-center gap-1.5">
+                      <MousePointerClick className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Link Clicks ({activeDrawerLead.clicks.length})</span>
+                    </h3>
+                  </div>
+                  <div className="space-y-1.5">
+                    {activeDrawerLead.clicks.map(c => (
+                      <div key={c.id} className="p-2.5 rounded bg-blue-50/50 border border-blue-200 text-xs">
+                        <div className="flex items-center justify-between text-[11px] text-gray-600 mb-0.5">
+                          <span className="font-medium text-gray-900 truncate max-w-xs">{c.target_url}</span>
+                          <span className="text-[10px] text-gray-500">{new Date(c.clicked_at).toLocaleString()}</span>
+                        </div>
+                        <div className="text-[10px] text-gray-500 font-mono">
+                          utm_campaign: {c.utm_campaign || 'outreach'} &bull; content: {c.utm_content || 'prospect'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Message History */}
               <div>
                 <div className="flex items-center justify-between mb-3">
@@ -1021,20 +1064,36 @@ export default function OutreachEngineDashboard() {
                 />
               </div>
 
-              {/* Attachment Checkbox */}
+              {/* Options */}
               {composeChannel === 'EMAIL' && (
-                <div className="flex items-center gap-2 pt-1">
-                  <input
-                    type="checkbox"
-                    id="attach-resume-check"
-                    checked={attachResume}
-                    onChange={e => setAttachResume(e.target.checked)}
-                    className="rounded border-gray-300 text-gray-900 focus:ring-0 w-3.5 h-3.5"
-                  />
-                  <label htmlFor="attach-resume-check" className="text-xs text-gray-700 font-medium flex items-center gap-1 cursor-pointer">
-                    <Paperclip className="w-3 h-3 text-gray-500" />
-                    <span>Attach Resume (Praroop_Anand.pdf)</span>
-                  </label>
+                <div className="space-y-2 pt-1">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="attach-resume-check"
+                      checked={attachResume}
+                      onChange={e => setAttachResume(e.target.checked)}
+                      className="rounded border-gray-300 text-gray-900 focus:ring-0 w-3.5 h-3.5"
+                    />
+                    <label htmlFor="attach-resume-check" className="text-xs text-gray-700 font-medium flex items-center gap-1 cursor-pointer">
+                      <Paperclip className="w-3 h-3 text-gray-500" />
+                      <span>Attach Resume (Praroop_Anand.pdf)</span>
+                    </label>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="utm-tracking-check"
+                      checked={enableUTMTracking}
+                      onChange={e => setEnableUTMTracking(e.target.checked)}
+                      className="rounded border-gray-300 text-gray-900 focus:ring-0 w-3.5 h-3.5"
+                    />
+                    <label htmlFor="utm-tracking-check" className="text-xs text-gray-700 font-medium flex items-center gap-1 cursor-pointer">
+                      <Sparkles className="w-3 h-3 text-gray-500" />
+                      <span>Disguise links with UTM parameters (utm_source=outreach&utm_campaign=...)</span>
+                    </label>
+                  </div>
                 </div>
               )}
             </div>

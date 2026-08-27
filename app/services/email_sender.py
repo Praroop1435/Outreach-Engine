@@ -1,6 +1,7 @@
 import smtplib
 import os
 import re
+import urllib.parse
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
@@ -10,6 +11,8 @@ from sqlmodel import Session, select
 
 from app.config import settings
 from app.models import Lead, EmailMessage, LeadStatus, EmailDirection
+
+URL_REGEX = re.compile(r"(https?://[^\s<>\"'\)]+)", re.IGNORECASE)
 
 def render_template(template_str: str, lead: Lead) -> str:
     """Renders placeholders in the template with lead attributes."""
@@ -31,15 +34,66 @@ def render_template(template_str: str, lead: Lead) -> str:
         rendered = pattern.sub(str(value or ""), rendered)
     return rendered
 
+def build_utm_url(url: str, lead: Lead) -> str:
+    """Appends UTM campaign parameters disguised behind clean links."""
+    parsed = urllib.parse.urlparse(url)
+    company_slug = (lead.company or "prospect").lower().replace(" ", "_")
+    name_slug = (lead.first_name or "contact").lower().replace(" ", "_")
+    
+    utm_params = {
+        "utm_source": "outreach",
+        "utm_medium": "email",
+        "utm_campaign": f"outreach_{company_slug}",
+        "utm_content": name_slug,
+        "ref": f"po_{lead.id or 0}"
+    }
+
+    query_dict = dict(urllib.parse.parse_qsl(parsed.query))
+    for k, v in utm_params.items():
+        if k not in query_dict:
+            query_dict[k] = v
+
+    new_query = urllib.parse.urlencode(query_dict)
+    return urllib.parse.urlunparse((
+        parsed.scheme,
+        parsed.netloc,
+        parsed.path,
+        parsed.params,
+        new_query,
+        parsed.fragment
+    ))
+
+def generate_html_body_with_utm(body_text: str, lead: Lead, enable_utm: bool = True) -> str:
+    """Converts plain text body to clean HTML while disguising UTM tracking parameters in anchor hrefs."""
+    escaped_lines = []
+    for line in body_text.split("\n"):
+        def replace_url(match):
+            raw_url = match.group(1).rstrip(".,;")
+            trailing_punct = match.group(1)[len(raw_url):]
+            if enable_utm:
+                tracked_url = build_utm_url(raw_url, lead)
+            else:
+                tracked_url = raw_url
+            return f'<a href="{tracked_url}" style="color: #111827; text-decoration: underline;" target="_blank">{raw_url}</a>{trailing_punct}'
+
+        transformed_line = URL_REGEX.sub(replace_url, line)
+        escaped_lines.append(transformed_line)
+
+    html_content = "<br>".join(escaped_lines)
+    return f"""<div style='font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 14px; line-height: 1.6; color: #111827;'>
+{html_content}
+</div>"""
+
 def send_email_to_lead(
     session: Session,
     lead: Lead,
     subject: str,
     body: str,
     attach_resume: bool = True,
+    enable_utm_tracking: bool = True,
     thread_id: Optional[str] = None
 ) -> EmailMessage:
-    """Sends an email via Gmail SMTP with optional PDF resume attachment and records it in SQLite."""
+    """Sends an email via Gmail SMTP with disguised UTM link tracking & PDF resume attachment."""
     if not settings.GMAIL_APP_PASSWORD:
         raise ValueError("GMAIL_APP_PASSWORD is not configured in .env")
     if not settings.GMAIL_USER:
@@ -54,8 +108,9 @@ def send_email_to_lead(
     # Alternative container for plain text + html
     alt_container = MIMEMultipart("alternative")
     text_part = MIMEText(body, "plain", "utf-8")
-    html_body = "<div style='font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif; font-size: 14px; line-height: 1.6; color: #111827;'>" + body.replace("\n", "<br>") + "</div>"
+    html_body = generate_html_body_with_utm(body, lead, enable_utm=enable_utm_tracking)
     html_part = MIMEText(html_body, "html", "utf-8")
+    
     alt_container.attach(text_part)
     alt_container.attach(html_part)
     msg.attach(alt_container)
@@ -67,7 +122,6 @@ def send_email_to_lead(
             base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
             resume_path = os.path.join(base_dir, resume_path)
             if not os.path.exists(resume_path):
-                # Fallback to root or documents
                 alt_path = os.path.join(base_dir, "Praroop_Anand.pdf")
                 if os.path.exists(alt_path):
                     resume_path = alt_path
