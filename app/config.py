@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     SMTP_HOST: str = "smtp.gmail.com"
     SMTP_PORT: int = 465
     PORT: int = int(os.getenv("PORT", "8437"))
+    RESUME_PATH: str = os.getenv("RESUME_PATH", "/Users/praroopanand/Documents/Resumes/Praroop_Anand.pdf")
 
     # X / Twitter OAuth 2.0 Settings
     X_CLIENT_ID: str = os.getenv("X_CLIENT_ID", "")

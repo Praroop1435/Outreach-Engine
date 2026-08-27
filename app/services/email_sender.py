@@ -1,7 +1,9 @@
 import smtplib
+import os
 import re
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
 from datetime import datetime
 from typing import Optional, Dict, Any
 from sqlmodel import Session, select
@@ -18,7 +20,8 @@ def render_template(template_str: str, lead: Lead) -> str:
         "last_name": lead.last_name or "",
         "company": lead.company or "your team",
         "role": lead.role or "team",
-        "custom_hook": lead.custom_hook or "your recent developments",
+        "x_handle": lead.x_handle or "",
+        "custom_hook": lead.custom_hook or "your recent work",
         "email": lead.email,
         "website": lead.website_url or "",
     }
@@ -33,27 +36,49 @@ def send_email_to_lead(
     lead: Lead,
     subject: str,
     body: str,
+    attach_resume: bool = True,
     thread_id: Optional[str] = None
 ) -> EmailMessage:
-    """Sends an email via Gmail SMTP and records it in SQLite."""
+    """Sends an email via Gmail SMTP with optional PDF resume attachment and records it in SQLite."""
     if not settings.GMAIL_APP_PASSWORD:
         raise ValueError("GMAIL_APP_PASSWORD is not configured in .env")
     if not settings.GMAIL_USER:
         raise ValueError("GMAIL_USER is not configured in .env")
 
-    # Construct MIME message
-    msg = MIMEMultipart("alternative")
+    # Construct MIME message (mixed for body + attachments)
+    msg = MIMEMultipart("mixed")
     msg["From"] = f"Praroop Anand <{settings.GMAIL_USER}>"
     msg["To"] = lead.email
     msg["Subject"] = subject
 
-    # Plain text + basic formatted HTML
+    # Alternative container for plain text + html
+    alt_container = MIMEMultipart("alternative")
     text_part = MIMEText(body, "plain", "utf-8")
     html_body = "<div style='font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif; font-size: 14px; line-height: 1.6; color: #111827;'>" + body.replace("\n", "<br>") + "</div>"
     html_part = MIMEText(html_body, "html", "utf-8")
+    alt_container.attach(text_part)
+    alt_container.attach(html_part)
+    msg.attach(alt_container)
 
-    msg.attach(text_part)
-    msg.attach(html_part)
+    # Attach Resume PDF if requested
+    if attach_resume:
+        resume_path = settings.RESUME_PATH
+        if not os.path.isabs(resume_path):
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            resume_path = os.path.join(base_dir, resume_path)
+            if not os.path.exists(resume_path):
+                # Fallback to root or documents
+                alt_path = os.path.join(base_dir, "Praroop_Anand.pdf")
+                if os.path.exists(alt_path):
+                    resume_path = alt_path
+                else:
+                    resume_path = "/Users/praroopanand/Documents/Resumes/Praroop_Anand.pdf"
+
+        if os.path.exists(resume_path):
+            with open(resume_path, "rb") as f:
+                pdf_part = MIMEApplication(f.read(), _subtype="pdf")
+            pdf_part.add_header("Content-Disposition", "attachment", filename="Praroop_Anand.pdf")
+            msg.attach(pdf_part)
 
     # Dispatch via SMTP SSL
     server = smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT)

@@ -1,10 +1,9 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Mail, 
   Send, 
-  RefreshCw, 
   Plus, 
   FileSpreadsheet, 
   Search, 
@@ -12,12 +11,13 @@ import {
   Edit, 
   History, 
   X,
-  MessageSquare,
-  ChevronRight,
-  User,
-  Building,
+  FileText,
+  Upload,
   Check,
-  AlertCircle
+  AlertCircle,
+  Paperclip,
+  Layers,
+  Sparkles
 } from 'lucide-react';
 
 interface EmailMessage {
@@ -83,6 +83,13 @@ interface XStatus {
   name: string | null;
 }
 
+interface ResumeStatus {
+  exists: boolean;
+  filename: string;
+  size_kb: number;
+  updated_at: string | null;
+}
+
 export default function OutreachEngineDashboard() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -98,16 +105,23 @@ export default function OutreachEngineDashboard() {
     reply_rate: 0
   });
   const [xStatus, setXStatus] = useState<XStatus>({ connected: false, username: null, name: null });
+  const [resumeStatus, setResumeStatus] = useState<ResumeStatus>({
+    exists: false,
+    filename: 'Praroop_Anand.pdf',
+    size_kb: 0,
+    updated_at: null
+  });
+
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  const [isSyncing, setIsSyncing] = useState(false);
 
   // Modals & Drawer state
   const [activeDrawerLead, setActiveDrawerLead] = useState<Lead | null>(null);
   const [isLeadModalOpen, setIsLeadModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isComposeModalOpen, setIsComposeModalOpen] = useState(false);
+  const [isTemplateBuilderOpen, setIsTemplateBuilderOpen] = useState(false);
   
   // Compose state
   const [composeLead, setComposeLead] = useState<Lead | null>(null);
@@ -116,6 +130,7 @@ export default function OutreachEngineDashboard() {
   const [composeTemplateId, setComposeTemplateId] = useState<string>('');
   const [composeSubject, setComposeSubject] = useState('');
   const [composeBody, setComposeBody] = useState('');
+  const [attachResume, setAttachResume] = useState(true);
   const [isSending, setIsSending] = useState(false);
 
   // Lead Form state
@@ -132,9 +147,28 @@ export default function OutreachEngineDashboard() {
     notes: ''
   });
 
+  // Template Builder Form state
+  const [templateForm, setTemplateForm] = useState<{
+    id: number;
+    name: string;
+    category: string;
+    subject_template: string;
+    body_template: string;
+  }>({
+    id: 0,
+    name: '',
+    category: 'Cold Outreach',
+    subject_template: '',
+    body_template: ''
+  });
+  const [selectedTemplateForEdit, setSelectedTemplateForEdit] = useState<Template | null>(null);
+
   // CSV Import State
   const [csvInput, setCsvInput] = useState('');
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const csvFileInputRef = useRef<HTMLInputElement>(null);
 
   const showToast = (text: string, type: 'success' | 'error' = 'success') => {
     setToastMessage({ text, type });
@@ -144,17 +178,19 @@ export default function OutreachEngineDashboard() {
   // Fetch all live data
   const fetchData = useCallback(async () => {
     try {
-      const [leadsRes, analyticsRes, templatesRes, xRes] = await Promise.all([
+      const [leadsRes, analyticsRes, templatesRes, xRes, resumeRes] = await Promise.all([
         fetch(`/api/leads?status=${statusFilter}${searchQuery ? `&search=${encodeURIComponent(searchQuery)}` : ''}`),
         fetch('/api/analytics/overview'),
         fetch('/api/templates'),
-        fetch('/api/auth/x/status')
+        fetch('/api/auth/x/status'),
+        fetch('/api/resume/status')
       ]);
 
       if (leadsRes.ok) setLeads(await leadsRes.json());
       if (analyticsRes.ok) setAnalytics(await analyticsRes.json());
       if (templatesRes.ok) setTemplates(await templatesRes.json());
       if (xRes.ok) setXStatus(await xRes.json());
+      if (resumeRes.ok) setResumeStatus(await resumeRes.json());
     } catch (err) {
       console.error('Error fetching data:', err);
     } finally {
@@ -166,19 +202,32 @@ export default function OutreachEngineDashboard() {
     fetchData();
   }, [fetchData]);
 
-  // Sync Mailbox
-  const handleSyncMailbox = async () => {
-    setIsSyncing(true);
+  // Resume Upload Handler
+  const handleResumeUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith('.pdf')) {
+      showToast('Please select a valid PDF file', 'error');
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
     try {
-      const res = await fetch('/api/sync/mailbox?limit=150', { method: 'POST' });
+      const res = await fetch('/api/resume/upload', {
+        method: 'POST',
+        body: formData
+      });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Sync failed');
-      showToast(`Mailbox synced! ${data.stats?.sent_synced || 0} sent emails synced.`);
+      if (!res.ok) throw new Error(data.detail || 'Upload failed');
+      showToast(`Resume uploaded: ${data.filename} (${data.size_kb} KB)`);
       fetchData();
     } catch (err: any) {
-      showToast(`Sync failed: ${err.message}`, 'error');
+      showToast(err.message, 'error');
     } finally {
-      setIsSyncing(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -199,6 +248,7 @@ export default function OutreachEngineDashboard() {
     setComposeLead(lead);
     setComposeXHandle(lead.x_handle || '');
     setComposeChannel('EMAIL');
+    setAttachResume(true);
     setComposeTemplateId(templates.length > 0 ? String(templates[0].id) : '');
     
     if (templates.length > 0) {
@@ -218,7 +268,8 @@ export default function OutreachEngineDashboard() {
         .replace(/\{\{\s*company\s*\}\}/gi, lead.company || 'your team')
         .replace(/\{\{\s*role\s*\}\}/gi, lead.role || 'team')
         .replace(/\{\{\s*custom_hook\s*\}\}/gi, lead.custom_hook || 'your recent work')
-        .replace(/\{\{\s*email\s*\}\}/gi, lead.email || '');
+        .replace(/\{\{\s*email\s*\}\}/gi, lead.email || '')
+        .replace(/\{\{\s*x_handle\s*\}\}/gi, lead.x_handle ? lead.x_handle.replace('@', '') : '');
     };
     setComposeSubject(replaceVars(tmpl.subject_template));
     setComposeBody(replaceVars(tmpl.body_template));
@@ -250,11 +301,15 @@ export default function OutreachEngineDashboard() {
         const res = await fetch(`/api/leads/${composeLead.id}/send`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ subject: composeSubject, body: composeBody })
+          body: JSON.stringify({ 
+            subject: composeSubject, 
+            body: composeBody,
+            attach_resume: attachResume 
+          })
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Email failed to send');
-        showToast(`Email sent to ${composeLead.email}`);
+        showToast(`Email sent to ${composeLead.email} with Praroop_Anand.pdf`);
       } else {
         // X DM
         if (!composeXHandle.trim()) {
@@ -287,6 +342,91 @@ export default function OutreachEngineDashboard() {
       showToast(err.message, 'error');
     } finally {
       setIsSending(false);
+    }
+  };
+
+  // Template Builder Handlers
+  const openTemplateBuilder = (tmpl?: Template) => {
+    if (tmpl) {
+      setSelectedTemplateForEdit(tmpl);
+      setTemplateForm({
+        id: tmpl.id,
+        name: tmpl.name,
+        category: tmpl.category,
+        subject_template: tmpl.subject_template,
+        body_template: tmpl.body_template
+      });
+    } else {
+      setSelectedTemplateForEdit(null);
+      setTemplateForm({
+        id: 0,
+        name: '',
+        category: 'Cold Outreach',
+        subject_template: 'Building AI systems that work in production for {{company}}',
+        body_template: 'Hi {{firstName}},\n\nI came across {{company}} and noticed your work on {{custom_hook}}.\n\nBest regards,\nPraroop Anand'
+      });
+    }
+    setIsTemplateBuilderOpen(true);
+  };
+
+  const handleSaveTemplate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!templateForm.name.trim() || !templateForm.body_template.trim()) {
+      showToast('Template name and body are required', 'error');
+      return;
+    }
+
+    try {
+      let res;
+      if (templateForm.id) {
+        res = await fetch(`/api/templates/${templateForm.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(templateForm)
+        });
+      } else {
+        res = await fetch('/api/templates', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(templateForm)
+        });
+      }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Failed to save template');
+      showToast(templateForm.id ? 'Template updated' : 'Template created');
+      fetchData();
+      setIsTemplateBuilderOpen(false);
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  const handleDeleteTemplate = async (id: number) => {
+    if (!confirm('Are you sure you want to delete this template?')) return;
+    try {
+      const res = await fetch(`/api/templates/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete template');
+      showToast('Template deleted');
+      fetchData();
+      if (selectedTemplateForEdit?.id === id) {
+        openTemplateBuilder();
+      }
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  const insertVariable = (variable: string, field: 'subject' | 'body') => {
+    if (field === 'subject') {
+      setTemplateForm(prev => ({
+        ...prev,
+        subject_template: `${prev.subject_template} {{${variable}}}`
+      }));
+    } else {
+      setTemplateForm(prev => ({
+        ...prev,
+        body_template: `${prev.body_template} {{${variable}}}`
+      }));
     }
   };
 
@@ -369,10 +509,25 @@ export default function OutreachEngineDashboard() {
     }
   };
 
-  // CSV Import
+  // CSV Import File Handler
+  const handleCSVFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      if (content) {
+        setCsvInput(content);
+        showToast(`Loaded ${file.name}`);
+      }
+    };
+    reader.readAsText(file);
+  };
+
   const handleImportCSV = async () => {
     if (!csvInput.trim()) {
-      showToast('Please paste CSV data', 'error');
+      showToast('Please paste CSV data or upload a file', 'error');
       return;
     }
     try {
@@ -422,11 +577,38 @@ export default function OutreachEngineDashboard() {
         
         {/* Top Header */}
         <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-6 mb-6 border-b border-gray-200 gap-4">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-xl font-semibold tracking-tight text-gray-950">Outreach Engine</h1>
             <span className="text-xs text-gray-500 bg-gray-50 px-2.5 py-1 rounded border border-gray-200 font-mono">
               anandpraroop@gmail.com
             </span>
+            
+            {/* Resume Upload Pill */}
+            <div className="flex items-center gap-1.5 bg-gray-50 px-2.5 py-1 rounded border border-gray-200 text-xs">
+              <Paperclip className="w-3.5 h-3.5 text-gray-500" />
+              <span className="font-mono text-gray-800 text-[11px] font-medium">
+                {resumeStatus.filename}
+              </span>
+              <span className="text-[10px] text-gray-400 font-mono">
+                ({resumeStatus.size_kb} KB)
+              </span>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="ml-1 text-[11px] font-medium text-gray-900 hover:underline flex items-center gap-0.5"
+                title="Upload updated PDF resume"
+              >
+                <Upload className="w-3 h-3 text-gray-700" />
+                <span>Upload</span>
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf"
+                className="hidden"
+                onChange={handleResumeUpload}
+              />
+            </div>
+
             {xStatus.connected && xStatus.username ? (
               <span className="text-xs text-gray-700 bg-gray-50 px-2.5 py-1 rounded border border-gray-200 font-medium">
                 X: @{xStatus.username}
@@ -441,10 +623,17 @@ export default function OutreachEngineDashboard() {
             )}
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => openTemplateBuilder()}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition"
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>Templates</span>
+            </button>
             <button
               onClick={() => setIsImportModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition"
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
               <span>Import Sheet / CSV</span>
@@ -770,7 +959,7 @@ export default function OutreachEngineDashboard() {
                   type="text"
                   readOnly
                   value={`${composeLead.first_name || ''} <${composeLead.email}>`}
-                  className="w-full px-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded text-gray-600"
+                  className="w-full px-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded text-gray-600 font-mono"
                 />
               </div>
 
@@ -784,7 +973,7 @@ export default function OutreachEngineDashboard() {
                     value={composeXHandle}
                     onChange={e => setComposeXHandle(e.target.value)}
                     placeholder="e.g. jerry_ai"
-                    className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900"
+                    className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900 font-mono"
                   />
                 </div>
               )}
@@ -831,6 +1020,23 @@ export default function OutreachEngineDashboard() {
                   className="w-full px-3 py-2 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900 leading-relaxed font-sans"
                 />
               </div>
+
+              {/* Attachment Checkbox */}
+              {composeChannel === 'EMAIL' && (
+                <div className="flex items-center gap-2 pt-1">
+                  <input
+                    type="checkbox"
+                    id="attach-resume-check"
+                    checked={attachResume}
+                    onChange={e => setAttachResume(e.target.checked)}
+                    className="rounded border-gray-300 text-gray-900 focus:ring-0 w-3.5 h-3.5"
+                  />
+                  <label htmlFor="attach-resume-check" className="text-xs text-gray-700 font-medium flex items-center gap-1 cursor-pointer">
+                    <Paperclip className="w-3 h-3 text-gray-500" />
+                    <span>Attach Resume (Praroop_Anand.pdf)</span>
+                  </label>
+                </div>
+              )}
             </div>
 
             <div className="px-5 py-3 border-t border-gray-200 bg-gray-50 flex justify-end gap-2">
@@ -849,6 +1055,157 @@ export default function OutreachEngineDashboard() {
               >
                 {isSending ? 'Sending...' : composeChannel === 'EMAIL' ? 'Send via Gmail' : 'Send via X'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Template Builder & Manager Modal */}
+      {isTemplateBuilderOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+          <div className="bg-white rounded-lg border border-gray-200 max-w-4xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Layers className="w-4 h-4 text-gray-900" />
+                <h3 className="text-sm font-semibold text-gray-950">Outreach Template Builder</h3>
+              </div>
+              <button onClick={() => setIsTemplateBuilderOpen(false)} className="p-1 text-gray-400 hover:text-gray-700">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-gray-200 flex-1 overflow-hidden">
+              
+              {/* Templates List Column */}
+              <div className="p-4 overflow-y-auto space-y-2 bg-gray-50/50">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[11px] uppercase font-semibold text-gray-500 tracking-wider">Templates</span>
+                  <button
+                    onClick={() => openTemplateBuilder()}
+                    className="text-[11px] font-medium text-gray-900 hover:underline flex items-center gap-1"
+                  >
+                    <Plus className="w-3 h-3" /> New
+                  </button>
+                </div>
+
+                {templates.map(tmpl => (
+                  <div
+                    key={tmpl.id}
+                    onClick={() => openTemplateBuilder(tmpl)}
+                    className={`p-3 rounded border cursor-pointer transition text-xs ${
+                      templateForm.id === tmpl.id
+                        ? 'bg-white border-gray-900 shadow-sm'
+                        : 'bg-white border-gray-200 hover:border-gray-400'
+                    }`}
+                  >
+                    <div className="font-semibold text-gray-900 truncate">{tmpl.name}</div>
+                    <div className="text-[10px] text-gray-500 mt-1 flex items-center justify-between">
+                      <span>{tmpl.category}</span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteTemplate(tmpl.id);
+                        }}
+                        className="text-red-500 hover:text-red-700"
+                        title="Delete template"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Template Editor Form Column */}
+              <div className="p-5 md:col-span-2 overflow-y-auto space-y-4">
+                <form onSubmit={handleSaveTemplate} className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Template Name</label>
+                      <input
+                        type="text"
+                        required
+                        value={templateForm.name}
+                        onChange={e => setTemplateForm({ ...templateForm, name: e.target.value })}
+                        placeholder="e.g. AI Production Systems Pitch"
+                        className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Category</label>
+                      <select
+                        value={templateForm.category}
+                        onChange={e => setTemplateForm({ ...templateForm, category: e.target.value })}
+                        className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900"
+                      >
+                        <option value="Cold Outreach">Cold Outreach</option>
+                        <option value="Follow-up">Follow-up</option>
+                        <option value="X Direct Message">X Direct Message</option>
+                        <option value="Partnership">Partnership</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Variable Helper Chips */}
+                  <div>
+                    <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wider mb-1.5">
+                      Insert Placeholders (Click to Add)
+                    </label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {['firstName', 'company', 'role', 'custom_hook', 'email', 'x_handle'].map(v => (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() => insertVariable(v, 'body')}
+                          className="px-2 py-0.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded font-mono text-[10px] border border-gray-300 transition"
+                        >
+                          +{`{{${v}}}`}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Subject Template</label>
+                    <input
+                      type="text"
+                      value={templateForm.subject_template}
+                      onChange={e => setTemplateForm({ ...templateForm, subject_template: e.target.value })}
+                      placeholder="e.g. Building AI systems that work in production for {{company}}"
+                      className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900 font-sans"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Body Template</label>
+                    <textarea
+                      rows={9}
+                      required
+                      value={templateForm.body_template}
+                      onChange={e => setTemplateForm({ ...templateForm, body_template: e.target.value })}
+                      placeholder="Write your genuine, professional outreach copy..."
+                      className="w-full px-3 py-2 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900 leading-relaxed font-sans"
+                    />
+                  </div>
+
+                  <div className="pt-2 flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsTemplateBuilderOpen(false)}
+                      className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition"
+                    >
+                      Close
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-4 py-1.5 text-xs font-medium text-white bg-gray-900 rounded hover:bg-black transition"
+                    >
+                      Save Template
+                    </button>
+                  </div>
+                </form>
+              </div>
+
             </div>
           </div>
         </div>
@@ -1009,10 +1366,28 @@ export default function OutreachEngineDashboard() {
               </button>
             </div>
 
-            <div className="p-5 space-y-3">
-              <p className="text-xs text-gray-600 leading-relaxed">
-                Paste CSV data from your Google Sheet or export. Columns like <strong>Email, Name/First Name, Company, Role, X Handle, Custom Hook, Notes</strong> are automatically detected.
-              </p>
+            <div className="p-5 space-y-3.5">
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-gray-600 leading-relaxed">
+                  Paste CSV data or upload a file. Auto-detects <strong>Email, Name, Company, Role, X Handle, Custom Hook, Notes</strong>.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => csvFileInputRef.current?.click()}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-gray-800 bg-gray-100 hover:bg-gray-200 rounded border border-gray-300 transition shrink-0 ml-2"
+                >
+                  <Upload className="w-3 h-3 text-gray-600" />
+                  <span>Upload CSV</span>
+                </button>
+                <input
+                  ref={csvFileInputRef}
+                  type="file"
+                  accept=".csv,text/csv"
+                  className="hidden"
+                  onChange={handleCSVFileChange}
+                />
+              </div>
+
               <div>
                 <textarea
                   rows={8}

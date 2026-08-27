@@ -148,7 +148,8 @@ def send_email(lead_id: int, req: SendEmailRequest, session: Session = Depends(g
             session=session,
             lead=lead,
             subject=req.subject,
-            body=req.body
+            body=req.body,
+            attach_resume=req.attach_resume
         )
         return {
             "ok": True,

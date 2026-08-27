@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.db import init_db
-from app.routers import leads, templates, sync, analytics, twitter
+from app.routers import leads, templates, sync, analytics, twitter, resume
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -32,6 +32,7 @@ app.include_router(templates.router)
 app.include_router(sync.router)
 app.include_router(analytics.router)
 app.include_router(twitter.router)
+app.include_router(resume.router)
 
 @app.get("/")
 def root():

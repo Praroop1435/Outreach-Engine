@@ -126,6 +126,7 @@ class SendEmailRequest(BaseModel):
     subject: str
     body: str
     template_id: Optional[int] = None
+    attach_resume: bool = True
 
 class SendXDMRequest(BaseModel):
     message: str
