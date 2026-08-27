@@ -4,4 +4,8 @@ All for One GCP.json
 outreach.db
 *.db
 x_token.json
+.x_oauth_state.json
+node_modules/
+frontend/node_modules/
+frontend/.next/
 __pycache__/
