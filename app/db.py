@@ -18,6 +18,33 @@ def init_db():
 
         curated_templates = [
             EmailTemplate(
+                name="Campus / Branch Bypass & Direct Application (Detailed)",
+                subject_template="{{role}} application — Praroop Anand",
+                body_template="""Hi {{firstName}},
+
+Your company recently visited my college for hiring, but the role was open only to CS students and I am from a non-CS branch, so I could not apply through the campus process. I am writing directly because I was genuinely interested in the role and wanted to put my work in front of you.
+
+I am a full-stack engineer who works across Next.js, TypeScript, and FastAPI, with a focus on building real products end to end. A few things I have built recently:
+
+• AI Social Automate (https://aisocialautomate.com/): an autonomous AI-powered content engine with multi-platform publishing, automated video/media rendering, and scheduling pipelines.
+
+• InsightFlow AI (https://portal.e360insurance.com/): an enterprise intelligence platform with robust FastAPI, PostgreSQL, Redis, and LLM agent pipelines operating in production.
+
+On the frontend side, I care a lot about visual hierarchy, custom component systems built from scratch, and clean, intuitive UI. On the backend, I design reliable REST APIs, work with Postgres/pgvector and Redis, and build scalable AI/vector retrieval workflows.
+
+You can find more of my work here:
+• Portfolio: https://praroop.site
+• GitHub: https://github.com/Praroop1435
+
+I have attached my resume (Praroop_Anand.pdf). If it would help, I am happy to build a small feature or prototype that reflects how I would approach a problem on your platform.
+
+Looking forward to hearing from you.
+
+Best regards,
+Praroop""",
+                category="Cold Outreach"
+            ),
+            EmailTemplate(
                 name="Role Application & Project Showcase (Primary)",
                 subject_template="{{role}} application — Praroop Anand",
                 body_template="""Hi {{firstName}},
