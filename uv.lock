@@ -252,6 +252,20 @@ wheels = [
 ]
 
 [[package]]
+name = "cloakbrowser"
+version = "0.5.10"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "httpx" },
+    { name = "playwright" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/75/64/1e508d0f49f6e1b0646bfe0e87e81ab5757096cc55e61340513ebf3af4f7/cloakbrowser-0.5.10.tar.gz", hash = "sha256:143ffcc22b7480870920fa0941436e22facdabb6f8f24035c6927e67538ad6da", size = 5755341, upload-time = "2026-08-30T03:56:55.091Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/33/bb/06e84b852c965d895abfa9c334f1ade04e1a88662858926dfda6f79b4e87/cloakbrowser-0.5.10-py3-none-any.whl", hash = "sha256:2315a5aed8992c29212231f9924db6e5f444b0b6cb96b5f3a2241f306dc0e37f", size = 134753, upload-time = "2026-08-30T03:56:53.423Z" },
+]
+
+[[package]]
 name = "cryptography"
 version = "50.0.1"
 source = { registry = "https://pypi.org/simple" }
@@ -645,6 +659,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "aiosqlite" },
+    { name = "cloakbrowser" },
     { name = "email-validator" },
     { name = "fastapi" },
     { name = "google-api-python-client" },
@@ -664,6 +679,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "aiosqlite", specifier = ">=0.22.1" },
+    { name = "cloakbrowser", specifier = ">=0.5.10" },
     { name = "email-validator", specifier = ">=2.3.0" },
     { name = "fastapi", specifier = ">=0.141.1" },
     { name = "google-api-python-client", specifier = ">=2.199.0" },

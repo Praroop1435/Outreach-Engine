@@ -111,6 +111,12 @@ Praroop""",
                 subject_template="X DM to @{{x_handle}}",
                 body_template="Hi {{firstName}}, saw what you are building at {{company}}. I'm a full-stack engineer building AI Social Automate (https://aisocialautomate.com/) and InsightFlow AI (https://portal.e360insurance.com/). Portfolio: https://praroop.site | GitHub: https://github.com/Praroop1435. Attached my resume to email, and I'd be happy to build a small feature to demonstrate my approach if helpful!",
                 category="X Direct Message"
+            ),
+            EmailTemplate(
+                name="LinkedIn Connection Note (Personalized)",
+                subject_template="Connect on LinkedIn",
+                body_template="Hi {{firstName}}, saw what you are building at {{company}} regarding {{custom_hook}}. I build production AI backend pipelines & agent systems (FastAPI, Redis, pgvector). Would love to connect and follow your journey!",
+                category="LinkedIn"
             )
         ]
         for t in curated_templates:

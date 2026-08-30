@@ -9,4 +9,7 @@ node_modules/
 frontend/node_modules/
 frontend/.next/
 x_browser_session.json
+linkedin_browser_session.json
+.linkedin_profile/
+.x_profile/
 __pycache__/

@@ -17,6 +17,8 @@ class LeadStatus(str, Enum):
 class MessageChannel(str, Enum):
     EMAIL = "EMAIL"
     X_DM = "X_DM"
+    LINKEDIN_CONNECT = "LINKEDIN_CONNECT"
+    LINKEDIN_DM = "LINKEDIN_DM"
 
 class EmailDirection(str, Enum):
     SENT = "SENT"
@@ -148,6 +150,14 @@ class SendEmailRequest(BaseModel):
 class SendXDMRequest(BaseModel):
     message: str
     x_handle: Optional[str] = None
+
+class SendLinkedInConnectRequest(BaseModel):
+    note: str
+    linkedin_url: Optional[str] = None
+
+class SendLinkedInMessageRequest(BaseModel):
+    message: str
+    linkedin_url: Optional[str] = None
 
 class EmailPreviewRequest(BaseModel):
     lead_id: int
