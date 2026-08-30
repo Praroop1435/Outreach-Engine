@@ -12,6 +12,7 @@ class LeadStatus(str, Enum):
     INTERESTED = "INTERESTED"
     NOT_INTERESTED = "NOT_INTERESTED"
     BOUNCED = "BOUNCED"
+    INVALID_EMAIL = "INVALID_EMAIL"
     ARCHIVED = "ARCHIVED"
 
 class MessageChannel(str, Enum):

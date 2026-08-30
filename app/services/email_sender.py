@@ -84,6 +84,8 @@ def generate_html_body_with_utm(body_text: str, lead: Lead, enable_utm: bool = T
 {html_content}
 </div>"""
 
+from app.services.email_verifier import verify_email_deliverability
+
 def send_email_to_lead(
     session: Session,
     lead: Lead,
@@ -93,11 +95,22 @@ def send_email_to_lead(
     enable_utm_tracking: bool = True,
     thread_id: Optional[str] = None
 ) -> EmailMessage:
-    """Sends an email via Gmail SMTP with disguised UTM link tracking & PDF resume attachment."""
+    """Sends an email via Gmail SMTP with pre-flight MX verification, disguised UTM link tracking & PDF resume attachment."""
     if not settings.GMAIL_APP_PASSWORD:
         raise ValueError("GMAIL_APP_PASSWORD is not configured in .env")
     if not settings.GMAIL_USER:
         raise ValueError("GMAIL_USER is not configured in .env")
+
+    # 1. Pre-flight Deliverability & MX Verification
+    verif = verify_email_deliverability(lead.email, check_mx=True)
+    if not verif["valid"]:
+        lead.status = LeadStatus.INVALID_EMAIL.value
+        session.add(lead)
+        session.commit()
+        err_msg = f"Pre-flight deliverability check failed for '{lead.email}': {verif.get('error')}"
+        if verif.get("suggestion"):
+            err_msg += f" (Suggested alternative: {verif['suggestion']})"
+        raise ValueError(err_msg)
 
     # Construct MIME message (mixed for body + attachments)
     msg = MIMEMultipart("mixed")

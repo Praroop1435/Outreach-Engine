@@ -82,7 +82,28 @@ def parse_name(name_raw: str, email_str: str) -> tuple[str, str]:
     parts = local.split()
     if parts:
         return parts[0].capitalize(), " ".join([p.capitalize() for p in parts[1:]])
-    return "", ""
+import re
+
+def extract_bounced_email(subject: str, body: str) -> Optional[str]:
+    """Extracts bounced recipient email address from Mail Delivery Subsystem / DSN bodies."""
+    patterns = [
+        r"wasn't delivered to\s+([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)",
+        r"delivered to\s+([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)",
+        r"failed:\s*([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)",
+        r"<([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)>:\s*(?:550|554|Host or domain name not found|No such user|Recipient address rejected)",
+        r"Recipient:\s*<?([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)?>?",
+        r"Final-Recipient:\s*rfc822;\s*([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)",
+        r"([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)\s*couldn't be found",
+        r"([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)\s*does not exist"
+    ]
+    full_text = f"{subject}\n{body}"
+    for p in patterns:
+        m = re.search(p, full_text, re.IGNORECASE)
+        if m:
+            candidate = m.group(1).lower().strip()
+            if candidate != settings.GMAIL_USER.lower() and "googlemail.com" not in candidate and "mailer-daemon" not in candidate:
+                return candidate
+    return None
 
 def sync_mailbox(session: Session, max_messages: int = 150, auto_create_leads: bool = False) -> Dict[str, Any]:
     """
@@ -236,7 +257,42 @@ def sync_mailbox(session: Session, max_messages: int = 150, auto_create_leads: b
                         if sender_email == settings.GMAIL_USER.lower():
                             continue
 
-                        # Check if sender matches any known lead
+                        subject = decode_mime_str(msg.get("Subject"))
+                        body = extract_body(msg)
+
+                        # 2a. Check for Mailer-Daemon Bounce / Delivery Failure
+                        is_bounce = any(k in sender_email for k in ["mailer-daemon", "postmaster", "mail-daemon"]) or "Delivery Status Notification" in subject or "Address not found" in subject
+                        if is_bounce:
+                            bounced_email = extract_bounced_email(subject, body)
+                            if bounced_email:
+                                b_lead = session.exec(select(Lead).where(Lead.email == bounced_email)).first()
+                                if b_lead:
+                                    b_lead.status = LeadStatus.BOUNCED.value
+                                    b_lead.updated_at = datetime.utcnow()
+                                    session.add(b_lead)
+                                    session.commit()
+                                    stats["bounces_detected"] = stats.get("bounces_detected", 0) + 1
+
+                                    # Log bounce message
+                                    msg_id = msg.get("Message-ID", "")
+                                    existing_msg = session.exec(select(EmailMessage).where(EmailMessage.message_id == msg_id)).first() if msg_id else None
+                                    if not existing_msg:
+                                        bounce_record = EmailMessage(
+                                            lead_id=b_lead.id,
+                                            message_id=msg_id,
+                                            direction=EmailDirection.RECEIVED.value,
+                                            sender=sender_email,
+                                            recipient=settings.GMAIL_USER,
+                                            subject=f"⚠️ BOUNCE: {subject}",
+                                            snippet=f"Address not found / undeliverable: {bounced_email}",
+                                            body_text=body,
+                                            sent_at=datetime.utcnow()
+                                        )
+                                        session.add(bounce_record)
+                                        session.commit()
+                                continue
+
+                        # 2b. Check if sender matches any known lead
                         lead = session.exec(select(Lead).where(Lead.email == sender_email)).first()
                         if lead:
                             subject = decode_mime_str(msg.get("Subject"))

@@ -728,6 +728,9 @@ export default function OutreachEngineDashboard() {
         return 'bg-amber-50 text-amber-800 border-amber-200';
       case 'INTERESTED':
         return 'bg-green-50 text-green-800 border-green-200';
+      case 'BOUNCED':
+      case 'INVALID_EMAIL':
+        return 'bg-red-50 text-red-700 border-red-200 font-semibold';
       default:
         return 'bg-gray-50 text-gray-600 border-gray-200';
     }
@@ -886,7 +889,7 @@ export default function OutreachEngineDashboard() {
         {/* Controls Bar & Filters */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
           <div className="inline-flex bg-gray-100 p-0.5 rounded border border-gray-200 text-xs font-medium">
-            {['ALL', 'NOT_CONTACTED', 'CONTACTED', 'REPLIED', 'FOLLOWED_UP'].map(tab => (
+            {['ALL', 'NOT_CONTACTED', 'CONTACTED', 'REPLIED', 'FOLLOWED_UP', 'BOUNCED'].map(tab => (
               <button
                 key={tab}
                 onClick={() => setStatusFilter(tab)}
