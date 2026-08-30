@@ -3,13 +3,32 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.db import init_db
+import asyncio
+from sqlmodel import Session
+from app.db import init_db, engine
+from app.services.mailbox_sync import sync_mailbox
 from app.routers import leads, templates, sync, analytics, twitter, resume, tracking, linkedin
+
+async def background_mailbox_sync_loop():
+    """Runs automatic background IMAP sync every 5 minutes to detect replies & bounces."""
+    while True:
+        try:
+            await asyncio.sleep(300)
+            if settings.GMAIL_USER and settings.GMAIL_APP_PASSWORD:
+                with Session(engine) as session:
+                    sync_mailbox(session, max_messages=50)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            print(f"[Background Mailbox Sync Error]: {e}")
+            await asyncio.sleep(60)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    sync_task = asyncio.create_task(background_mailbox_sync_loop())
     yield
+    sync_task.cancel()
 
 app = FastAPI(
     title=settings.APP_NAME,

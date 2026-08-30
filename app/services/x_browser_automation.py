@@ -213,9 +213,21 @@ def send_x_dm_browser(
         else:
             dm_button.click()
 
+        # Check for X DM Restriction / Paywall Modal
+        page.wait_for_timeout(1200)
+        restriction_modal = page.query_selector('[data-testid="sheetDialog"], [role="dialog"]')
+        if restriction_modal:
+            modal_text = restriction_modal.inner_text()
+            if any(k in modal_text.lower() for k in ["verified", "premium", "subscribe", "can't message", "restricted"]):
+                # Close modal if close button exists
+                close_btn = page.query_selector('[data-testid="app-bar-close"], [aria-label="Close"]')
+                if close_btn:
+                    close_btn.click()
+                raise ValueError(f"Direct messages to @{clean_user} are restricted by X (requires verified / following).")
+
         # Wait for either PIN prompt or Composer to appear
         try:
-            page.wait_for_selector('input[aria-label*="Digit 1"], [data-testid="dm-composer-textarea"], textarea[aria-label="Message"], div[role="textbox"]', timeout=15000)
+            page.wait_for_selector('input[aria-label*="Digit 1"], [data-testid="dm-composer-textarea"], textarea[aria-label="Message"], div[role="textbox"]', timeout=8000)
         except Exception:
             pass
 
@@ -232,6 +244,13 @@ def send_x_dm_browser(
                 page.keyboard.press("Enter")
                 page.wait_for_timeout(2500)
 
+        # Double-check for restriction after PIN entry
+        restriction_modal = page.query_selector('[data-testid="sheetDialog"], [role="dialog"]')
+        if restriction_modal:
+            modal_text = restriction_modal.inner_text()
+            if any(k in modal_text.lower() for k in ["verified", "premium", "subscribe", "can't message", "restricted"]):
+                raise ValueError(f"Direct messages to @{clean_user} are restricted by X (requires verified / following).")
+
         # Locate DM message input box
         input_selectors = [
             '[data-testid="dm-composer-textarea"]',
@@ -247,7 +266,7 @@ def send_x_dm_browser(
         composer_input = None
         for sel in input_selectors:
             try:
-                el = page.wait_for_selector(sel, timeout=7000)
+                el = page.wait_for_selector(sel, timeout=5000)
                 if el and el.is_visible():
                     composer_input = el
                     break

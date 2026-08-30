@@ -65,12 +65,18 @@ def get_analytics_overview(session: Session = Depends(get_session)) -> Dict[str,
         )
     ).one() or 0
 
+    # Total bounced
+    bounced_count = session.exec(
+        select(func.count(Lead.id)).where(Lead.status.in_([LeadStatus.BOUNCED.value, LeadStatus.INVALID_EMAIL.value]))
+    ).one() or 0
+
     return {
         "total_leads": total_leads,
         "contacted_count": contacted_count,
         "not_contacted_count": not_contacted_count,
         "replied_count": replied_count,
         "interested_count": interested_count,
+        "bounced_count": bounced_count,
         "follow_up_needed": follow_up_needed,
         "total_sent_emails": total_sent_emails,
         "total_received_emails": total_received_emails,
