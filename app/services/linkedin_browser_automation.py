@@ -259,6 +259,18 @@ def send_linkedin_connection_request(
         connect_button.click()
         page.wait_for_timeout(random.randint(1500, 2500))
 
+        # Handle "How do you know [Name]?" modal if present
+        how_modal = page.query_selector('div[role="dialog"]')
+        if how_modal and "How do you know" in how_modal.inner_text():
+            other_option = page.query_selector('button[aria-label="Other"], button:has-text("Other"), input[value="OTHER"]')
+            if other_option:
+                other_option.click()
+                page.wait_for_timeout(500)
+                connect_btn_modal = page.query_selector('button:has-text("Connect"), button[aria-label="Connect"]')
+                if connect_btn_modal:
+                    connect_btn_modal.click()
+                    page.wait_for_timeout(1000)
+
         # Handle "Add a note" Modal
         add_note_selectors = [
             'button[aria-label="Add a note"]',
@@ -276,33 +288,36 @@ def send_linkedin_connection_request(
             add_note_button.click()
             page.wait_for_timeout(1000)
 
+            # Ensure strict LinkedIn 300 character limit
+            clean_note = note_text.strip()
+            if len(clean_note) > 300:
+                clean_note = clean_note[:297].rstrip() + "..."
+
             textarea_selectors = [
                 'textarea[name="message"]',
-                'textarea#custom-message',
-                'textarea.ember-text-area'
+                'textarea[id="custom-message"]',
+                'textarea[aria-label="Add a note"]',
+                'textarea'
             ]
-            textarea = None
+            note_input = None
             for sel in textarea_selectors:
-                try:
-                    el = page.wait_for_selector(sel, timeout=5000)
-                    if el and el.is_visible():
-                        textarea = el
-                        break
-                except PlaywrightTimeoutError:
-                    continue
+                el = page.query_selector(sel)
+                if el and el.is_visible():
+                    note_input = el
+                    break
 
-            if textarea:
-                textarea.click()
+            if note_input:
+                note_input.focus()
                 page.wait_for_timeout(300)
-                note_clean = note_text[:298].strip()
-                for char in note_clean:
+                note_input.fill("")
+                for char in clean_note:
                     if char == "\n":
                         page.keyboard.down("Shift")
                         page.keyboard.press("Enter")
                         page.keyboard.up("Shift")
                     else:
                         page.keyboard.type(char)
-                    time.sleep(random.uniform(0.015, 0.04))
+                    time.sleep(random.uniform(0.015, 0.035))
                 page.wait_for_timeout(1000)
 
         # Click Send Invitation
