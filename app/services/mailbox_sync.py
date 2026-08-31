@@ -5,6 +5,7 @@ from email.utils import parseaddr, parsedate_to_datetime
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 import os
+import time
 from sqlmodel import Session, select
 
 from app.config import settings
@@ -123,9 +124,22 @@ def sync_mailbox(session: Session, max_messages: int = 150, auto_create_leads: b
         "new_replies_detected": 0
     }
 
-    mail = imaplib.IMAP4_SSL(settings.IMAP_HOST, settings.IMAP_PORT)
+    import socket
+    socket.setdefaulttimeout(20.0)
+
+    mail = None
+    for attempt in range(3):
+        try:
+            mail = imaplib.IMAP4_SSL(settings.IMAP_HOST, settings.IMAP_PORT, timeout=20.0)
+            mail.login(settings.GMAIL_USER, settings.GMAIL_APP_PASSWORD)
+            break
+        except Exception as e:
+            if attempt == 2:
+                print(f"[IMAP Connect Error]: {e}")
+                return stats
+            time.sleep(2)
+
     try:
-        mail.login(settings.GMAIL_USER, settings.GMAIL_APP_PASSWORD)
 
         # -------------------------------------------------------------
         # 1. Sync Sent Mail
