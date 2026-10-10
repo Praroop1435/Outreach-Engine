@@ -1,0 +1,131 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Deep Obsidian Canvas Background -->
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0B0F19" />
+      <stop offset="50%" stop-color="#060913" />
+      <stop offset="100%" stop-color="#020408" />
+    </linearGradient>
+
+    <!-- Subtle Luminous Rim Border -->
+    <linearGradient id="rim" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38BDF8" stop-opacity="0.6" />
+      <stop offset="35%" stop-color="#10B981" stop-opacity="0.4" />
+      <stop offset="70%" stop-color="#6366F1" stop-opacity="0.2" />
+      <stop offset="100%" stop-color="#0284C7" stop-opacity="0.1" />
+    </linearGradient>
+
+    <!-- Radial Core Ambient Glow -->
+    <radialGradient id="ambient" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#10B981" stop-opacity="0.32" />
+      <stop offset="45%" stop-color="#06B6D4" stop-opacity="0.14" />
+      <stop offset="85%" stop-color="#0B0F19" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Main Dorsal Wing (Luminous Radiant Emerald to Specular White) -->
+    <linearGradient id="dorsal" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#047857" />
+      <stop offset="25%" stop-color="#10B981" />
+      <stop offset="65%" stop-color="#34D399" />
+      <stop offset="90%" stop-color="#A7F3D0" />
+      <stop offset="100%" stop-color="#FFFFFF" />
+    </linearGradient>
+
+    <!-- Ventral Wing (Deep Dimension / Electric Cyan to Sapphire Shadow) -->
+    <linearGradient id="ventral" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284C7" />
+      <stop offset="35%" stop-color="#0369A1" />
+      <stop offset="75%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#1E1B4B" />
+    </linearGradient>
+
+    <!-- Center Keel Fold (Rich Emerald Obsidian Shade) -->
+    <linearGradient id="keel" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#065F46" />
+      <stop offset="60%" stop-color="#064E3B" />
+      <stop offset="100%" stop-color="#022C22" />
+    </linearGradient>
+
+    <!-- Spine Specular Highlight -->
+    <linearGradient id="spine" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#10B981" stop-opacity="0.2" />
+      <stop offset="45%" stop-color="#6EE7B7" stop-opacity="0.9" />
+      <stop offset="100%" stop-color="#FFFFFF" />
+    </linearGradient>
+
+    <!-- Propulsion Beacon Flare -->
+    <radialGradient id="beacon" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#6EE7B7" stop-opacity="1" />
+      <stop offset="25%" stop-color="#10B981" stop-opacity="0.7" />
+      <stop offset="60%" stop-color="#06B6D4" stop-opacity="0.2" />
+      <stop offset="100%" stop-color="#0B0F19" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Signal Wave Gradient -->
+    <linearGradient id="wave" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38BDF8" stop-opacity="0.6" />
+      <stop offset="50%" stop-color="#10B981" stop-opacity="0.4" />
+      <stop offset="100%" stop-color="#34D399" stop-opacity="0" />
+    </linearGradient>
+
+    <!-- Drop Shadow for 3D elevation -->
+    <filter id="craftShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="-6" dy="16" stdDeviation="18" flood-color="#000000" flood-opacity="0.75" />
+    </filter>
+  </defs>
+
+  <!-- Canvas Squircle -->
+  <rect width="512" height="512" rx="124" fill="url(#bg)" />
+  <rect x="2.5" y="2.5" width="507" height="507" rx="121.5" fill="none" stroke="url(#rim)" stroke-width="3" />
+
+  <!-- Ambient Glow Behind Craft -->
+  <circle cx="280" cy="235" r="215" fill="url(#ambient)" />
+
+  <!-- Trailing Outreach Radar Arcs (Signals radiating outward into network) -->
+  <g opacity="0.5">
+    <path d="M 124 388 A 186 186 0 0 1 388 124" fill="none" stroke="url(#wave)" stroke-width="2.5" stroke-dasharray="8 8" />
+    <path d="M 166 388 A 144 144 0 0 1 388 166" fill="none" stroke="#10B981" stroke-width="2" stroke-opacity="0.45" />
+    <path d="M 208 388 A 102 102 0 0 1 388 208" fill="none" stroke="#38BDF8" stroke-width="1.5" stroke-dasharray="4 6" stroke-opacity="0.35" />
+  </g>
+
+  <!-- Vector Trajectory Line -->
+  <line x1="120" y1="392" x2="428" y2="84" stroke="#10B981" stroke-opacity="0.25" stroke-width="2.5" stroke-dasharray="6 6" />
+
+  <!-- Origin Beacon Pulse -->
+  <circle cx="166" cy="346" r="48" fill="url(#beacon)" />
+  <circle cx="166" cy="346" r="6" fill="#A7F3D0" />
+  <circle cx="166" cy="346" r="2.5" fill="#FFFFFF" />
+
+  <!-- The Supersonic Outreach Craft -->
+  <g filter="url(#craftShadow)">
+    <!-- Right Ventral Wing (Folded down, deep sapphire & cyan shadow) -->
+    <!-- Nose: 424,88 | Right Wingtip: 304,392 | Inner Notch: 272,264 -->
+    <polygon points="424,88 272,264 304,392" fill="url(#ventral)" />
+
+    <!-- Isometric Keel Fin (Center body keel fold that gives true origami depth) -->
+    <!-- Nose: 424,88 | Keel Root: 208,328 | Inner Notch: 272,264 -->
+    <polygon points="424,88 272,264 208,328" fill="url(#keel)" />
+
+    <!-- Left Dorsal Wing (Main forward wing, brilliant emerald / mint to pure white highlight) -->
+    <!-- Nose: 424,88 | Left Wingtip: 112,208 | Inner Notch: 272,264 -->
+    <polygon points="424,88 112,208 272,264" fill="url(#dorsal)" />
+
+    <!-- Left Wing Upper Aerodynamic Facet (Subtle specular bevel reflection) -->
+    <polygon points="424,88 184,216 112,208" fill="#FFFFFF" opacity="0.2" />
+
+    <!-- Razor Center Spine (Ultra-crisp specular light reflection) -->
+    <line x1="424" y1="88" x2="272" y2="264" stroke="url(#spine)" stroke-width="3.5" stroke-linecap="round" />
+
+    <!-- Outer Leading Edge Specular Lines -->
+    <line x1="424" y1="88" x2="112" y2="208" stroke="#FFFFFF" stroke-opacity="0.95" stroke-width="2.5" stroke-linecap="round" />
+    <line x1="424" y1="88" x2="304" y2="392" stroke="#38BDF8" stroke-opacity="0.8" stroke-width="2" stroke-linecap="round" />
+
+    <!-- Trailing Notched Back Edges -->
+    <line x1="112" y1="208" x2="272" y2="264" stroke="#047857" stroke-opacity="0.9" stroke-width="1.5" />
+    <line x1="304" y1="392" x2="272" y2="264" stroke="#0284C7" stroke-opacity="0.9" stroke-width="1.5" />
+  </g>
+
+  <!-- Apex Supersonic Flare -->
+  <circle cx="424" cy="88" r="4.5" fill="#FFFFFF" />
+  <circle cx="424" cy="88" r="2" fill="#E0F2FE" />
+</svg>
