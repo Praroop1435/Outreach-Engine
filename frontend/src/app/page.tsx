@@ -21,8 +21,24 @@ import {
   ExternalLink,
   MousePointerClick,
   Activity,
-  Globe
+  Globe,
+  Bell,
+  RefreshCw
 } from 'lucide-react';
+
+interface ProspectReply {
+  id: number;
+  lead_id?: number;
+  sender: string;
+  recipient: string;
+  subject: string;
+  snippet?: string;
+  sent_at: string;
+  lead_name?: string;
+  lead_company?: string;
+  lead_email?: string;
+  lead_status?: string;
+}
 
 interface EmailMessage {
   id: number;
@@ -145,6 +161,11 @@ export default function OutreachEngineDashboard() {
   const [clicksData, setClicksData] = useState<LinkClick[]>([]);
   const [isLoadingClicks, setIsLoadingClicks] = useState(false);
 
+  // Replies Notification Modal state
+  const [replies, setReplies] = useState<ProspectReply[]>([]);
+  const [isRepliesModalOpen, setIsRepliesModalOpen] = useState(false);
+  const [isSyncingMailbox, setIsSyncingMailbox] = useState(false);
+
   // Compose state
   const [composeLead, setComposeLead] = useState<Lead | null>(null);
   const [composeTemplateId, setComposeTemplateId] = useState<string>('');
@@ -199,23 +220,40 @@ export default function OutreachEngineDashboard() {
   // Fetch all live data
   const fetchData = useCallback(async () => {
     try {
-      const [leadsRes, analyticsRes, templatesRes, resumeRes] = await Promise.all([
+      const [leadsRes, analyticsRes, templatesRes, resumeRes, repliesRes] = await Promise.all([
         fetch(`/api/leads?status=${statusFilter}${searchQuery ? `&search=${encodeURIComponent(searchQuery)}` : ''}`),
         fetch('/api/analytics/overview'),
         fetch('/api/templates'),
-        fetch('/api/resume/status')
+        fetch('/api/resume/status'),
+        fetch('/api/analytics/replies')
       ]);
 
       if (leadsRes.ok) setLeads(await leadsRes.json());
       if (analyticsRes.ok) setAnalytics(await analyticsRes.json());
       if (templatesRes.ok) setTemplates(await templatesRes.json());
       if (resumeRes.ok) setResumeStatus(await resumeRes.json());
+      if (repliesRes.ok) setReplies(await repliesRes.json());
     } catch (err) {
       console.error('Error fetching data:', err);
     } finally {
       setIsLoading(false);
     }
   }, [statusFilter, searchQuery]);
+
+  const handleManualSyncMailbox = async () => {
+    setIsSyncingMailbox(true);
+    try {
+      const res = await fetch('/api/sync/mailbox', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Mailbox sync failed');
+      showToast(`Mailbox sync complete! ${data.stats?.received || 0} messages synced.`);
+      fetchData();
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    } finally {
+      setIsSyncingMailbox(false);
+    }
+  };
 
   useEffect(() => {
     fetchData();
@@ -628,6 +666,20 @@ export default function OutreachEngineDashboard() {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Notification Bell */}
+            <button
+              onClick={() => setIsRepliesModalOpen(true)}
+              className="relative p-2 text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition"
+              title="Prospect Replies & Inbound Notifications"
+            >
+              <Bell className="w-3.5 h-3.5" />
+              {replies.length > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-600 text-white font-mono text-[9px] min-w-4 h-4 px-1 rounded-full flex items-center justify-center font-bold shadow-sm">
+                  {replies.length}
+                </span>
+              )}
+            </button>
+
             <button
               onClick={() => openTemplateBuilder()}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition"
@@ -749,17 +801,17 @@ export default function OutreachEngineDashboard() {
                     const fullName = `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || 'No Name';
                     const lastContactedStr = lead.last_contacted_at
                       ? new Date(lead.last_contacted_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                      : '—';
+                      : '-';
                     const clicksCount = lead.click_count || 0;
 
                     return (
                       <tr key={lead.id} className="hover:bg-gray-50/60 transition">
                         <td className="px-4 py-3">
                           <div className="font-medium text-gray-900">{fullName}</div>
-                          <div className="text-gray-500 text-[11px]">{lead.role || '—'}</div>
+                          <div className="text-gray-500 text-[11px]">{lead.role || '-'}</div>
                         </td>
                         <td className="px-4 py-3 font-medium text-gray-900">
-                          {lead.company || '—'}
+                          {lead.company || '-'}
                         </td>
                         <td className="px-4 py-3">
                           <div className="text-gray-900 font-mono text-[11px]">{lead.email}</div>
@@ -873,7 +925,7 @@ export default function OutreachEngineDashboard() {
                           <span className="text-gray-400 font-normal">({c.lead_company || c.lead_email})</span>
                         </div>
                         <span className="text-[11px] text-gray-500">
-                          {c.clicked_at ? new Date(c.clicked_at).toLocaleString() : '—'}
+                          {c.clicked_at ? new Date(c.clicked_at).toLocaleString() : '-'}
                         </span>
                       </div>
 
@@ -920,6 +972,109 @@ export default function OutreachEngineDashboard() {
               <button
                 type="button"
                 onClick={() => setIsClicksModalOpen(false)}
+                className="px-4 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Replies & Inbound Notifications Modal */}
+      {isRepliesModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+          <div className="bg-white rounded-lg border border-gray-200 max-w-2xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Bell className="w-4 h-4 text-amber-600" />
+                <h3 className="text-sm font-semibold text-gray-950">
+                  Prospect Replies & Inbound Notifications
+                </h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-medium bg-amber-50 text-amber-800 border border-amber-200">
+                  {replies.length} Total
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleManualSyncMailbox}
+                  disabled={isSyncingMailbox}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-60 transition"
+                  title="Check Gmail IMAP for new replies right now"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isSyncingMailbox ? 'animate-spin' : ''}`} />
+                  <span>{isSyncingMailbox ? 'Checking...' : 'Check Inbox'}</span>
+                </button>
+                <button 
+                  onClick={() => setIsRepliesModalOpen(false)} 
+                  className="p-1 text-gray-400 hover:text-gray-700 rounded"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1 space-y-4">
+              {replies.length === 0 ? (
+                <div className="text-center py-12 text-xs text-gray-500 border border-dashed border-gray-200 rounded-lg p-6">
+                  <p className="font-medium text-gray-800">No prospect replies yet.</p>
+                  <p className="text-gray-400 mt-1 text-[11px]">
+                    Your background IMAP loop checks Gmail for new inbound messages every 5 minutes. When someone replies, they will appear here instantly.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {replies.map(r => (
+                    <div 
+                      key={r.id} 
+                      className="p-4 bg-white border border-gray-200 rounded-lg shadow-sm hover:border-gray-400 text-xs space-y-2 transition cursor-pointer"
+                      onClick={() => {
+                        if (r.lead_id) openLeadDrawer(r.lead_id);
+                        setIsRepliesModalOpen(false);
+                      }}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-gray-950">
+                            {r.lead_name || r.sender}
+                          </span>
+                          <span className="text-gray-400 font-mono text-[11px]">
+                            ({r.lead_company || r.lead_email})
+                          </span>
+                        </div>
+                        <span className="text-[11px] text-gray-500 font-mono">
+                          {r.sent_at ? new Date(r.sent_at).toLocaleString() : ''}
+                        </span>
+                      </div>
+
+                      <div className="font-medium text-gray-900 truncate">
+                        {r.subject}
+                      </div>
+
+                      <div className="text-gray-600 line-clamp-2 leading-relaxed bg-gray-50 p-2.5 rounded border border-gray-100 font-sans text-[11px]">
+                        {r.snippet || 'No message preview available.'}
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1">
+                        <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-medium ${getStatusBadge(r.lead_status || 'REPLIED')}`}>
+                          {r.lead_status || 'REPLIED'}
+                        </span>
+                        <span className="text-blue-600 hover:underline text-[11px] font-medium flex items-center gap-1">
+                          <span>Open Thread & Details</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-3 border-t border-gray-200 bg-gray-50 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsRepliesModalOpen(false)}
                 className="px-4 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition"
               >
                 Close

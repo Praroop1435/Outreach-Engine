@@ -103,8 +103,8 @@ def get_all_clicks(
             "id": click.id,
             "lead_id": click.lead_id,
             "lead_name": f"{lead.first_name or ''} {lead.last_name or ''}".strip() if lead else "Unknown Prospect",
-            "lead_email": lead.email if lead else "—",
-            "lead_company": lead.company if lead else "—",
+            "lead_email": lead.email if lead else "N/A",
+            "lead_company": lead.company if lead else "N/A",
             "target_url": click.target_url,
             "utm_source": click.utm_source,
             "utm_campaign": click.utm_campaign,
@@ -114,3 +114,34 @@ def get_all_clicks(
             "user_agent": click.user_agent
         })
     return click_list
+
+@router.get("/replies")
+def get_recent_replies(
+    limit: int = 25,
+    session: Session = Depends(get_session)
+) -> List[Dict[str, Any]]:
+    """Returns incoming replies with prospect info for the notification bell."""
+    query = (
+        select(EmailMessage, Lead)
+        .join(Lead, EmailMessage.lead_id == Lead.id, isouter=True)
+        .where(EmailMessage.direction == EmailDirection.RECEIVED.value)
+        .order_by(col(EmailMessage.sent_at).desc())
+        .limit(limit)
+    )
+    results = session.exec(query).all()
+    replies_list = []
+    for msg, lead in results:
+        replies_list.append({
+            "id": msg.id,
+            "lead_id": msg.lead_id,
+            "sender": msg.sender,
+            "recipient": msg.recipient,
+            "subject": msg.subject,
+            "snippet": msg.snippet or (msg.body_text[:120] if msg.body_text else ""),
+            "sent_at": msg.sent_at.isoformat() if msg.sent_at else None,
+            "lead_name": f"{lead.first_name or ''} {lead.last_name or ''}".strip() if lead else msg.sender,
+            "lead_company": lead.company if lead else "Unknown",
+            "lead_email": lead.email if lead else msg.sender,
+            "lead_status": lead.status if lead else "REPLIED"
+        })
+    return replies_list
