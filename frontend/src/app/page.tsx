@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
@@ -23,7 +23,16 @@ import {
   Activity,
   Globe,
   Bell,
-  RefreshCw
+  RefreshCw,
+  Users,
+  Clock,
+  ChevronRight,
+  Copy,
+  CheckCircle2,
+  Inbox,
+  ArrowUpRight,
+  Eye,
+  Filter
 } from 'lucide-react';
 
 interface ProspectReply {
@@ -108,6 +117,7 @@ interface Analytics {
   not_contacted_count: number;
   replied_count: number;
   interested_count: number;
+  bounced_count?: number;
   follow_up_needed: number;
   total_sent_emails: number;
   total_received_emails: number;
@@ -122,6 +132,16 @@ interface ResumeStatus {
   updated_at: string | null;
 }
 
+const BACKEND_BASE = (process.env.NEXT_PUBLIC_BACKEND_URL || "https://outreach-engine-h5lx.onrender.com").replace(/\/$/, "");
+
+// Resilient API Fetch Helper that works across Vercel and Render
+async function apiFetch(endpoint: string, options?: RequestInit): Promise<Response> {
+  const url = endpoint.startsWith('http')
+    ? endpoint
+    : `${BACKEND_BASE}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+  return fetch(url, options);
+}
+
 export default function OutreachEngineDashboard() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -131,48 +151,50 @@ export default function OutreachEngineDashboard() {
     not_contacted_count: 0,
     replied_count: 0,
     interested_count: 0,
+    bounced_count: 0,
     follow_up_needed: 0,
     total_sent_emails: 0,
     total_received_emails: 0,
     total_link_clicks: 0,
     reply_rate: 0
   });
+
   const [resumeStatus, setResumeStatus] = useState<ResumeStatus>({
-    exists: false,
+    exists: true,
     filename: 'Praroop_Anand.pdf',
-    size_kb: 0,
+    size_kb: 102,
     updated_at: null
   });
 
-  const [statusFilter, setStatusFilter] = useState('ALL');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
-
-  // Modals & Drawer state
-  const [activeDrawerLead, setActiveDrawerLead] = useState<Lead | null>(null);
-  const [isLeadModalOpen, setIsLeadModalOpen] = useState(false);
-  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [isComposeModalOpen, setIsComposeModalOpen] = useState(false);
-  const [isTemplateBuilderOpen, setIsTemplateBuilderOpen] = useState(false);
-  
-  // Link Clicks Pop-up Modal state
-  const [isClicksModalOpen, setIsClicksModalOpen] = useState(false);
-  const [clicksModalLeadId, setClicksModalLeadId] = useState<number | null>(null);
-  const [clicksData, setClicksData] = useState<LinkClick[]>([]);
-  const [isLoadingClicks, setIsLoadingClicks] = useState(false);
-
-  // Replies Notification Modal state
   const [replies, setReplies] = useState<ProspectReply[]>([]);
   const [isRepliesModalOpen, setIsRepliesModalOpen] = useState(false);
-  const [isSyncingMailbox, setIsSyncingMailbox] = useState(false);
 
-  // Compose state
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSyncingMailbox, setIsSyncingMailbox] = useState(false);
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Drawers and Modals
+  const [activeDrawerLead, setActiveDrawerLead] = useState<Lead | null>(null);
+  const [isComposeModalOpen, setIsComposeModalOpen] = useState(false);
+  const [isLeadModalOpen, setIsLeadModalOpen] = useState(false);
+  const [isTemplateBuilderOpen, setIsTemplateBuilderOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+
+  // Link Clicks Modal
+  const [isClicksModalOpen, setIsClicksModalOpen] = useState(false);
+  const [clicksData, setClicksData] = useState<LinkClick[]>([]);
+  const [isLoadingClicks, setIsLoadingClicks] = useState(false);
+  const [clicksModalLeadId, setClicksModalLeadId] = useState<number | null>(null);
+
+  // Compose State
   const [composeLead, setComposeLead] = useState<Lead | null>(null);
   const [composeTemplateId, setComposeTemplateId] = useState<string>('');
   const [composeSubject, setComposeSubject] = useState('');
   const [composeBody, setComposeBody] = useState('');
   const [attachResume, setAttachResume] = useState(true);
   const [enableUTMTracking, setEnableUTMTracking] = useState(true);
+  const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [isSending, setIsSending] = useState(false);
 
   // Lead Form state
@@ -207,6 +229,7 @@ export default function OutreachEngineDashboard() {
 
   // CSV Import State
   const [csvInput, setCsvInput] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -221,11 +244,11 @@ export default function OutreachEngineDashboard() {
   const fetchData = useCallback(async () => {
     try {
       const [leadsRes, analyticsRes, templatesRes, resumeRes, repliesRes] = await Promise.all([
-        fetch(`/api/leads?status=${statusFilter}${searchQuery ? `&search=${encodeURIComponent(searchQuery)}` : ''}`),
-        fetch('/api/analytics/overview'),
-        fetch('/api/templates'),
-        fetch('/api/resume/status'),
-        fetch('/api/analytics/replies')
+        apiFetch(`/api/leads?status=${statusFilter}${searchQuery ? `&search=${encodeURIComponent(searchQuery)}` : ''}`),
+        apiFetch('/api/analytics/overview'),
+        apiFetch('/api/templates'),
+        apiFetch('/api/resume/status'),
+        apiFetch('/api/analytics/replies')
       ]);
 
       if (leadsRes.ok) setLeads(await leadsRes.json());
@@ -243,7 +266,7 @@ export default function OutreachEngineDashboard() {
   const handleManualSyncMailbox = async () => {
     setIsSyncingMailbox(true);
     try {
-      const res = await fetch('/api/sync/mailbox', { method: 'POST' });
+      const res = await apiFetch('/api/sync/mailbox', { method: 'POST' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Mailbox sync failed');
       showToast(`Mailbox sync complete! ${data.stats?.received || 0} messages synced.`);
@@ -273,14 +296,19 @@ export default function OutreachEngineDashboard() {
     formData.append('file', file);
 
     try {
-      const res = await fetch('/api/resume/upload', {
+      const res = await apiFetch('/api/resume/upload', {
         method: 'POST',
         body: formData
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Upload failed');
-      showToast(`Resume uploaded: ${data.filename} (${data.size_kb} KB)`);
-      fetchData();
+      if (!res.ok) throw new Error(data.detail || 'Resume upload failed');
+      showToast('Resume uploaded and verified successfully');
+      setResumeStatus({
+        exists: true,
+        filename: data.filename || file.name,
+        size_kb: data.size_kb || Math.round(file.size / 1024),
+        updated_at: new Date().toISOString()
+      });
     } catch (err: any) {
       showToast(err.message, 'error');
     } finally {
@@ -295,7 +323,7 @@ export default function OutreachEngineDashboard() {
     setIsClicksModalOpen(true);
     try {
       const url = leadId ? `/api/analytics/clicks?lead_id=${leadId}` : '/api/analytics/clicks';
-      const res = await fetch(url);
+      const res = await apiFetch(url);
       if (!res.ok) throw new Error('Failed to fetch link clicks');
       const data = await res.json();
       setClicksData(data);
@@ -309,8 +337,8 @@ export default function OutreachEngineDashboard() {
   // Drawer Handler
   const openLeadDrawer = async (leadId: number) => {
     try {
-      const res = await fetch(`/api/leads/${leadId}`);
-      if (!res.ok) throw new Error('Could not fetch lead details');
+      const res = await apiFetch(`/api/leads/${leadId}`);
+      if (!res.ok) throw new Error('Failed to load contact details');
       const data = await res.json();
       setActiveDrawerLead(data);
     } catch (err: any) {
@@ -318,78 +346,102 @@ export default function OutreachEngineDashboard() {
     }
   };
 
-  // Compose Handlers
+  // Compose Modal Handlers
   const openCompose = (lead: Lead) => {
     setComposeLead(lead);
-    setAttachResume(true);
-    setEnableUTMTracking(true);
-    setComposeTemplateId(templates.length > 0 ? String(templates[0].id) : '');
+    setIsPreviewMode(false);
     
-    if (templates.length > 0) {
-      applyTemplate(templates[0], lead);
+    // Choose sensible default template or custom
+    const defaultTemplate = templates.find(t => t.name.includes('Grounded') || t.name.includes('AI Startup')) || templates[0];
+    if (defaultTemplate) {
+      setComposeTemplateId(String(defaultTemplate.id));
+      applyTemplateText(defaultTemplate, lead);
     } else {
-      setComposeSubject('');
-      setComposeBody('');
+      setComposeTemplateId('');
+      setComposeSubject(`Engineering & AI systems for ${lead.company || 'your team'}: Praroop Anand`);
+      setComposeBody(
+        `Hi ${lead.first_name || 'there'},\n\n` +
+        `I noticed what you are building at ${lead.company || 'your company'}${lead.custom_hook ? ` regarding ${lead.custom_hook}` : ''}.\n\n` +
+        `I am a full-stack engineer and AI developer (FastAPI, Next.js, PostgreSQL, Redis, Docker). Right now at Relu Consultancy, I build production AI workflows and scalable backend pipelines for real client workloads.\n\n` +
+        `Portfolio: https://praroop.site\nGitHub: https://github.com/Praroop1435\n\n` +
+        `My resume is attached for quick reference. If you have an active problem or upcoming pipeline on your roadmap, I would be glad to build a working prototype to demonstrate my approach.\n\n` +
+        `Best regards,\nPraroop Anand`
+      );
     }
     setIsComposeModalOpen(true);
   };
 
-  const applyTemplate = (tmpl: Template, lead: Lead) => {
-    const replaceVars = (str: string) => {
-      return str
-        .replace(/\{\{\s*(firstName|first_name)\s*\}\}/gi, lead.first_name || (lead.email.split('@')[0]))
-        .replace(/\{\{\s*(lastName|last_name)\s*\}\}/gi, lead.last_name || '')
-        .replace(/\{\{\s*company\s*\}\}/gi, lead.company || 'your team')
-        .replace(/\{\{\s*role\s*\}\}/gi, lead.role || 'team')
-        .replace(/\{\{\s*custom_hook\s*\}\}/gi, lead.custom_hook || 'your recent work')
-        .replace(/\{\{\s*email\s*\}\}/gi, lead.email || '')
-        .replace(/\{\{\s*linkedin\s*\}\}/gi, lead.linkedin_url || '')
-        .replace(/\{\{\s*x_handle\s*\}\}/gi, lead.x_handle ? lead.x_handle.replace('@', '') : '');
-    };
-    setComposeSubject(replaceVars(tmpl.subject_template));
-    setComposeBody(replaceVars(tmpl.body_template));
+  const applyTemplateText = (tpl: Template, lead: Lead) => {
+    const fn = lead.first_name || 'there';
+    const comp = lead.company || 'your team';
+    const hook = lead.custom_hook || 'your technology roadmap';
+    const role = lead.role || 'Full-Stack Engineer';
+
+    let subj = tpl.subject_template
+      .replace(/{{firstName}}/gi, fn)
+      .replace(/{{first_name}}/gi, fn)
+      .replace(/{{company}}/gi, comp)
+      .replace(/{{role}}/gi, role)
+      .replace(/{{custom_hook}}/gi, hook);
+
+    let body = tpl.body_template
+      .replace(/{{firstName}}/gi, fn)
+      .replace(/{{first_name}}/gi, fn)
+      .replace(/{{company}}/gi, comp)
+      .replace(/{{role}}/gi, role)
+      .replace(/{{custom_hook}}/gi, hook);
+
+    setComposeSubject(subj);
+    setComposeBody(body);
   };
 
   const handleTemplateChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const id = e.target.value;
-    setComposeTemplateId(id);
-    if (!id || !composeLead) return;
-    const tmpl = templates.find(t => String(t.id) === id);
-    if (tmpl) applyTemplate(tmpl, composeLead);
+    const val = e.target.value;
+    setComposeTemplateId(val);
+    if (!val || !composeLead) return;
+    const tpl = templates.find(t => String(t.id) === val);
+    if (tpl) {
+      applyTemplateText(tpl, composeLead);
+    }
   };
 
-  const handleSendMessage = async () => {
-    if (!composeLead || !composeBody.trim()) {
-      showToast('Please enter your outreach message', 'error');
+  const insertVariableToken = (token: string) => {
+    setComposeBody(prev => prev + ` ${token} `);
+  };
+
+  const handleSendEmail = async () => {
+    if (!composeLead) return;
+    if (!composeSubject.trim()) {
+      showToast('Please enter an email subject line', 'error');
       return;
     }
-
-    if (!composeSubject.trim()) {
-      showToast('Please provide an email subject', 'error');
+    if (!composeBody.trim()) {
+      showToast('Please enter your outreach message', 'error');
       return;
     }
 
     setIsSending(true);
     try {
-      const res = await fetch(`/api/leads/${composeLead.id}/send`, {
+      const res = await apiFetch(`/api/leads/${composeLead.id}/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          subject: composeSubject, 
-          body: composeBody,
+        body: JSON.stringify({
+          subject: composeSubject,
+          body_text: composeBody,
           attach_resume: attachResume,
-          enable_utm_tracking: enableUTMTracking
+          enable_tracking: enableUTMTracking,
+          template_id: composeTemplateId ? parseInt(composeTemplateId) : null
         })
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Email failed to send');
-      showToast(`Email sent with UTM tracking & ${attachResume ? 'Praroop_Anand.pdf' : 'no attachment'}`);
+      if (!res.ok) throw new Error(data.detail || 'Dispatch failed');
 
+      showToast(`Email dispatched to ${composeLead.email}!`);
       setIsComposeModalOpen(false);
+      fetchData();
       if (activeDrawerLead && activeDrawerLead.id === composeLead.id) {
         openLeadDrawer(composeLead.id);
       }
-      fetchData();
     } catch (err: any) {
       showToast(err.message, 'error');
     } finally {
@@ -397,16 +449,16 @@ export default function OutreachEngineDashboard() {
     }
   };
 
-  // Template Builder Handlers
-  const openTemplateBuilder = (tmpl?: Template) => {
-    if (tmpl) {
-      setSelectedTemplateForEdit(tmpl);
+  // Template Form Handlers
+  const openTemplateBuilder = (tpl: Template | null = null) => {
+    if (tpl) {
+      setSelectedTemplateForEdit(tpl);
       setTemplateForm({
-        id: tmpl.id,
-        name: tmpl.name,
-        category: tmpl.category,
-        subject_template: tmpl.subject_template,
-        body_template: tmpl.body_template
+        id: tpl.id,
+        name: tpl.name,
+        category: tpl.category,
+        subject_template: tpl.subject_template,
+        body_template: tpl.body_template
       });
     } else {
       setSelectedTemplateForEdit(null);
@@ -414,8 +466,8 @@ export default function OutreachEngineDashboard() {
         id: 0,
         name: '',
         category: 'Cold Outreach',
-        subject_template: '{{role}} application: Praroop Anand',
-        body_template: 'Hi {{firstName}},\n\nI came across {{company}}\'s recruitment post and wanted to reach out regarding the {{role}} role.\n\nI\'m a full-stack engineer with strong experience building user-centric web applications and production AI systems. Recently,\n\nI built AI Social Automate (https://aisocialautomate.com/), an autonomous multi-platform content engine with automated media generation and scheduled publishing pipelines.\n\nI\'m also building InsightFlow AI (https://portal.e360insurance.com/), an enterprise intelligence platform with robust FastAPI, PostgreSQL, Redis, and LLM agent pipelines operating in production.\n\nI place a strong emphasis on clean architecture, intuitive UI, and reliable systems when building products.\n\nYou can find my work here:\n• Portfolio: https://praroop.site\n• GitHub: https://github.com/Praroop1435\n\nI\'ve attached my resume (Praroop_Anand.pdf) for your reference.\n\nI\'d be happy to share something more tailored or even build a small feature to demonstrate my approach if that would be helpful.\n\nLooking forward to hearing from you.\nBest regards,\nPraroop'
+        subject_template: '',
+        body_template: ''
       });
     }
     setIsTemplateBuilderOpen(true);
@@ -423,31 +475,35 @@ export default function OutreachEngineDashboard() {
 
   const handleSaveTemplate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!templateForm.name.trim() || !templateForm.body_template.trim()) {
-      showToast('Template name and body are required', 'error');
+    if (!templateForm.name.trim() || !templateForm.subject_template.trim() || !templateForm.body_template.trim()) {
+      showToast('All template fields are required', 'error');
       return;
     }
 
     try {
       let res;
       if (templateForm.id) {
-        res = await fetch(`/api/templates/${templateForm.id}`, {
+        res = await apiFetch(`/api/templates/${templateForm.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(templateForm)
         });
       } else {
-        res = await fetch('/api/templates', {
+        res = await apiFetch('/api/templates', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(templateForm)
         });
       }
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Failed to save template');
-      showToast(templateForm.id ? 'Template updated' : 'Template created');
-      fetchData();
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.detail || 'Failed to save template');
+      }
+
+      showToast(`Template "${templateForm.name}" saved!`);
       setIsTemplateBuilderOpen(false);
+      fetchData();
     } catch (err: any) {
       showToast(err.message, 'error');
     }
@@ -456,33 +512,19 @@ export default function OutreachEngineDashboard() {
   const handleDeleteTemplate = async (id: number) => {
     if (!confirm('Are you sure you want to delete this template?')) return;
     try {
-      const res = await fetch(`/api/templates/${id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/templates/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to delete template');
       showToast('Template deleted');
       fetchData();
-      if (selectedTemplateForEdit?.id === id) {
-        openTemplateBuilder();
+      if (templateForm.id === id) {
+        openTemplateBuilder(null);
       }
     } catch (err: any) {
       showToast(err.message, 'error');
     }
   };
 
-  const insertVariable = (variable: string, field: 'subject' | 'body') => {
-    if (field === 'subject') {
-      setTemplateForm(prev => ({
-        ...prev,
-        subject_template: `${prev.subject_template} {{${variable}}}`
-      }));
-    } else {
-      setTemplateForm(prev => ({
-        ...prev,
-        body_template: `${prev.body_template} {{${variable}}}`
-      }));
-    }
-  };
-
-  // Lead CRUD
+  // Add / Edit Lead Handlers
   const openNewLeadModal = () => {
     setLeadForm({
       id: 0,
@@ -508,7 +550,7 @@ export default function OutreachEngineDashboard() {
       x_handle: lead.x_handle || '',
       company: lead.company || '',
       role: lead.role || '',
-      status: lead.status,
+      status: lead.status || 'NOT_CONTACTED',
       custom_hook: lead.custom_hook || '',
       notes: lead.notes || ''
     });
@@ -517,21 +559,21 @@ export default function OutreachEngineDashboard() {
 
   const handleSaveLead = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!leadForm.email) {
-      showToast('Email is required', 'error');
+    if (!leadForm.email.trim()) {
+      showToast('Contact email is required', 'error');
       return;
     }
 
     try {
       let res;
       if (leadForm.id) {
-        res = await fetch(`/api/leads/${leadForm.id}`, {
+        res = await apiFetch(`/api/leads/${leadForm.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(leadForm)
         });
       } else {
-        res = await fetch('/api/leads', {
+        res = await apiFetch('/api/leads', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(leadForm)
@@ -540,7 +582,8 @@ export default function OutreachEngineDashboard() {
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Failed to save contact');
-      showToast(leadForm.id ? 'Contact updated' : 'Contact created');
+
+      showToast(`Contact ${leadForm.email} saved successfully!`);
       setIsLeadModalOpen(false);
       fetchData();
     } catch (err: any) {
@@ -549,10 +592,10 @@ export default function OutreachEngineDashboard() {
   };
 
   const handleDeleteLead = async (leadId: number) => {
-    if (!confirm('Are you sure you want to delete this contact and all its message history?')) return;
+    if (!confirm('Delete this contact permanently?')) return;
     try {
-      const res = await fetch(`/api/leads/${leadId}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Failed to delete');
+      const res = await apiFetch(`/api/leads/${leadId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete contact');
       showToast('Contact deleted');
       if (activeDrawerLead?.id === leadId) setActiveDrawerLead(null);
       fetchData();
@@ -561,102 +604,133 @@ export default function OutreachEngineDashboard() {
     }
   };
 
-  // CSV Import File Handler
-  const handleCSVFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // CSV Import Handlers
+  const handleCsvFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     const reader = new FileReader();
-    reader.onload = (event) => {
-      const content = event.target?.result as string;
-      if (content) {
-        setCsvInput(content);
-        showToast(`Loaded ${file.name}`);
-      }
+    reader.onload = evt => {
+      setCsvInput(String(evt.target?.result || ''));
     };
     reader.readAsText(file);
   };
 
-  const handleImportCSV = async () => {
+  const handleImportCsv = async () => {
     if (!csvInput.trim()) {
-      showToast('Please paste CSV data or upload a file', 'error');
+      showToast('Please upload a file or paste CSV content', 'error');
       return;
     }
+
+    setIsImporting(true);
     try {
-      const res = await fetch('/api/leads/import', {
+      const res = await apiFetch('/api/leads/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ csv_data: csvInput })
+        body: JSON.stringify({ csv_content: csvInput })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Import failed');
-      showToast(`Imported! ${data.stats?.created || 0} created, ${data.stats?.updated || 0} updated.`);
+
+      showToast(`Imported ${data.created || 0} new contacts (${data.skipped || 0} skipped).`);
       setIsImportModalOpen(false);
       setCsvInput('');
       fetchData();
     } catch (err: any) {
       showToast(err.message, 'error');
+    } finally {
+      setIsImporting(false);
     }
   };
 
+  // Helper Badge Colors in Ocean Palette
   const getStatusBadge = (status: string) => {
-    switch (status) {
+    switch (status.toUpperCase()) {
       case 'CONTACTED':
-        return 'bg-blue-50 text-blue-700 border-blue-200';
+        return 'bg-sky-50 text-sky-700 border-sky-200';
       case 'REPLIED':
         return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-      case 'FOLLOWED_UP':
-        return 'bg-amber-50 text-amber-800 border-amber-200';
       case 'INTERESTED':
-        return 'bg-green-50 text-green-800 border-green-200';
+        return 'bg-teal-50 text-teal-700 border-teal-200 font-bold';
+      case 'FOLLOWED_UP':
+        return 'bg-blue-50 text-blue-700 border-blue-200';
       case 'BOUNCED':
       case 'INVALID_EMAIL':
-        return 'bg-red-50 text-red-700 border-red-200 font-semibold';
+        return 'bg-rose-50 text-rose-700 border-rose-200';
       default:
-        return 'bg-gray-50 text-gray-600 border-gray-200';
+        return 'bg-slate-100 text-slate-600 border-slate-200';
     }
   };
 
+  const filterTabs = [
+    { id: 'ALL', label: 'All', count: analytics.total_leads },
+    { id: 'NOT_CONTACTED', label: 'Not Contacted', count: analytics.not_contacted_count },
+    { id: 'CONTACTED', label: 'Contacted', count: analytics.contacted_count },
+    { id: 'REPLIED', label: 'Replied', count: analytics.replied_count },
+    { id: 'FOLLOWED_UP', label: 'Followed Up', count: analytics.follow_up_needed },
+    { id: 'BOUNCED', label: 'Bounced', count: analytics.bounced_count || 0 }
+  ];
+
   return (
-    <div className="min-h-screen bg-white text-gray-900 font-sans">
-      {/* Toast Notification */}
+    <div className="min-h-screen bg-slate-50/70 text-slate-900 font-sans antialiased">
+      {/* Toast Notification Banner */}
       {toastMessage && (
-        <div className="fixed bottom-5 right-5 z-50 flex items-center gap-2 bg-gray-900 text-white px-4 py-2.5 rounded shadow-lg text-xs font-medium">
-          {toastMessage.type === 'error' ? <AlertCircle className="w-4 h-4 text-red-400" /> : <Check className="w-4 h-4 text-emerald-400" />}
+        <div className={`fixed top-4 right-4 z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-xl shadow-lg border text-xs font-medium animate-in fade-in slide-in-from-top-2 duration-200 ${
+          toastMessage.type === 'error'
+            ? 'bg-rose-950 text-rose-100 border-rose-800'
+            : 'bg-slate-900 text-slate-100 border-slate-800 shadow-sky-500/10'
+        }`}>
+          {toastMessage.type === 'error' ? (
+            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+          ) : (
+            <CheckCircle2 className="w-4 h-4 text-sky-400 shrink-0" />
+          )}
           <span>{toastMessage.text}</span>
         </div>
       )}
 
       {/* Main Container */}
-      <div className="max-w-7xl mx-auto px-6 py-6">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
         
         {/* Top Header */}
-        <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-6 mb-6 border-b border-gray-200 gap-4">
+        <header className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-xs flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2.5">
-              <img src="/icon.svg" alt="Outreach Engine" className="w-7 h-7 rounded-lg shadow-sm hover:scale-105 transition-transform" />
-              <h1 className="text-xl font-semibold tracking-tight text-gray-950">Outreach Engine</h1>
+              <img 
+                src="/icon.svg" 
+                alt="Outreach Engine Logo" 
+                className="w-8 h-8 rounded-lg drop-shadow-xs hover:scale-105 transition-transform" 
+              />
+              <div>
+                <h1 className="text-lg sm:text-xl font-bold tracking-tight text-slate-950 flex items-center gap-2">
+                  <span>outreach engine</span>
+                  <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-sky-50 text-sky-700 border border-sky-200/80">
+                    Neon Postgres
+                  </span>
+                </h1>
+              </div>
             </div>
-            <span className="text-xs text-gray-500 bg-gray-50 px-2.5 py-1 rounded border border-gray-200 font-mono">
+
+            <span className="text-xs text-sky-900 bg-sky-50/80 px-2.5 py-1 rounded-lg border border-sky-200 font-mono">
               anandpraroop@gmail.com
             </span>
             
             {/* Resume Upload Pill */}
-            <div className="flex items-center gap-1.5 bg-gray-50 px-2.5 py-1 rounded border border-gray-200 text-xs">
-              <Paperclip className="w-3.5 h-3.5 text-gray-500" />
-              <span className="font-mono text-gray-800 text-[11px] font-medium">
+            <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200 text-xs">
+              <Paperclip className="w-3.5 h-3.5 text-sky-600" />
+              <span className="font-mono text-slate-800 text-[11px] font-medium truncate max-w-[140px]">
                 {resumeStatus.filename}
               </span>
-              <span className="text-[10px] text-gray-400 font-mono">
+              <span className="text-[10px] text-slate-400 font-mono">
                 ({resumeStatus.size_kb} KB)
               </span>
               <button
+                type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="ml-1 text-[11px] font-medium text-gray-900 hover:underline flex items-center gap-0.5"
+                className="ml-1 text-[11px] font-semibold text-sky-600 hover:text-sky-700 hover:underline flex items-center gap-0.5"
                 title="Upload updated PDF resume"
               >
-                <Upload className="w-3 h-3 text-gray-700" />
-                <span>Upload</span>
+                <Upload className="w-3 h-3" />
+                <span>Update</span>
               </button>
               <input
                 ref={fileInputRef}
@@ -668,135 +742,238 @@ export default function OutreachEngineDashboard() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          {/* Action Toolbar */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Sync Mailbox Button */}
+            <button
+              type="button"
+              onClick={handleManualSyncMailbox}
+              disabled={isSyncingMailbox}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-sky-50/50 hover:border-sky-300 hover:text-sky-700 transition disabled:opacity-60 shadow-2xs"
+              title="Poll Gmail IMAP for new prospect replies"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-sky-600 ${isSyncingMailbox ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">{isSyncingMailbox ? 'Checking...' : 'Sync Inbox'}</span>
+            </button>
+
             {/* Notification Bell */}
             <button
+              type="button"
               onClick={() => setIsRepliesModalOpen(true)}
-              className="relative p-2 text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition"
+              className="relative p-2 text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-sky-50/50 hover:border-sky-300 transition shadow-2xs"
               title="Prospect Replies & Inbound Notifications"
             >
-              <Bell className="w-3.5 h-3.5" />
+              <Bell className="w-4 h-4 text-slate-600" />
               {replies.length > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-600 text-white font-mono text-[9px] min-w-4 h-4 px-1 rounded-full flex items-center justify-center font-bold shadow-sm">
+                <span className="absolute -top-1 -right-1 bg-sky-600 text-white font-mono text-[9px] min-w-4 h-4 px-1 rounded-full flex items-center justify-center font-bold shadow-xs">
                   {replies.length}
                 </span>
               )}
             </button>
 
+            {/* Templates Button */}
             <button
+              type="button"
               onClick={() => openTemplateBuilder()}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition"
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-sky-50/50 hover:border-sky-300 hover:text-sky-700 transition shadow-2xs"
             >
-              <Layers className="w-3.5 h-3.5" />
+              <Layers className="w-3.5 h-3.5 text-sky-600" />
               <span>Templates</span>
             </button>
+
+            {/* Import CSV Button */}
             <button
+              type="button"
               onClick={() => setIsImportModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition"
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-sky-50/50 hover:border-sky-300 hover:text-sky-700 transition shadow-2xs"
             >
-              <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span>Import Sheet / CSV</span>
+              <FileSpreadsheet className="w-3.5 h-3.5 text-sky-600" />
+              <span>Import Sheet</span>
             </button>
+
+            {/* Add Contact Primary Button */}
             <button
+              type="button"
               onClick={openNewLeadModal}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-gray-900 rounded hover:bg-black transition"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 rounded-xl shadow-xs shadow-sky-500/25 active:scale-95 transition"
             >
-              <Plus className="w-3.5 h-3.5" />
+              <Plus className="w-4 h-4" />
               <span>Add Contact</span>
             </button>
           </div>
         </header>
 
-        {/* KPI Grid */}
-        <section className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white p-4 rounded border border-gray-200">
-            <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">Total Prospects</div>
-            <div className="text-2xl font-semibold text-gray-950 mt-1">{analytics.total_leads}</div>
-            <div className="text-xs text-gray-400 mt-0.5">in pipeline</div>
+        {/* Interactive KPI Metrics Grid */}
+        <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Card 1: Total Prospects */}
+          <div 
+            onClick={() => setStatusFilter('ALL')}
+            className={`bg-white p-4 sm:p-5 rounded-2xl border transition cursor-pointer group shadow-xs ${
+              statusFilter === 'ALL' ? 'border-sky-400 ring-2 ring-sky-500/10' : 'border-slate-200/80 hover:border-sky-300'
+            }`}
+            title="Click to view all prospects"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total Prospects</span>
+              <div className="p-1.5 rounded-lg bg-sky-50 text-sky-600 group-hover:scale-105 transition">
+                <Users className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="text-2xl sm:text-3xl font-bold text-slate-950 mt-2">
+              {analytics.total_leads}
+            </div>
+            <div className="text-xs text-slate-400 mt-1 flex items-center justify-between">
+              <span>in pipeline</span>
+              <span className="text-sky-600 font-medium text-[11px] group-hover:underline">Filter &rarr;</span>
+            </div>
           </div>
-          <div className="bg-white p-4 rounded border border-gray-200">
-            <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">Contacted</div>
-            <div className="text-2xl font-semibold text-gray-950 mt-1">{analytics.contacted_count}</div>
-            <div className="text-xs text-gray-400 mt-0.5">{analytics.total_sent_emails} sent messages</div>
+
+          {/* Card 2: Contacted */}
+          <div 
+            onClick={() => setStatusFilter('CONTACTED')}
+            className={`bg-white p-4 sm:p-5 rounded-2xl border transition cursor-pointer group shadow-xs ${
+              statusFilter === 'CONTACTED' ? 'border-sky-400 ring-2 ring-sky-500/10' : 'border-slate-200/80 hover:border-sky-300'
+            }`}
+            title="Click to filter contacted prospects"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Contacted</span>
+              <div className="p-1.5 rounded-lg bg-blue-50 text-blue-600 group-hover:scale-105 transition">
+                <Send className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="text-2xl sm:text-3xl font-bold text-slate-950 mt-2">
+              {analytics.contacted_count}
+            </div>
+            <div className="text-xs text-slate-400 mt-1 flex items-center justify-between">
+              <span>{analytics.total_sent_emails} sent messages</span>
+              <span className="text-sky-600 font-medium text-[11px] group-hover:underline">Filter &rarr;</span>
+            </div>
           </div>
+
+          {/* Card 3: Link Clicks Activity */}
           <div 
             onClick={() => openClicksModal(null)}
-            className="bg-white p-4 rounded border border-gray-200 cursor-pointer hover:border-gray-900 transition group"
-            title="Click to view all link clicks & activity"
+            className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/80 hover:border-sky-300 transition cursor-pointer group shadow-xs"
+            title="Click to inspect real-time link click logs"
           >
-            <div className="text-xs font-medium text-gray-500 uppercase tracking-wider flex items-center justify-between">
-              <span>Link Clicks</span>
-              <Activity className="w-3.5 h-3.5 text-blue-600 group-hover:scale-110 transition" />
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Link Clicks</span>
+              <div className="p-1.5 rounded-lg bg-cyan-50 text-cyan-600 group-hover:scale-105 transition">
+                <MousePointerClick className="w-4 h-4" />
+              </div>
             </div>
-            <div className="text-2xl font-semibold text-gray-950 mt-1 flex items-baseline gap-2">
+            <div className="text-2xl sm:text-3xl font-bold text-slate-950 mt-2 flex items-baseline gap-2">
               <span>{analytics.total_link_clicks}</span>
-              <span className="text-xs text-blue-600 font-medium group-hover:underline">View Log &rarr;</span>
+              <span className="text-xs text-sky-600 font-semibold group-hover:underline">View Log &rarr;</span>
             </div>
-            <div className="text-xs text-gray-400 mt-0.5">tracked portfolio & demo links</div>
+            <div className="text-xs text-slate-400 mt-1">
+              tracked portfolio & demo links
+            </div>
           </div>
-          <div className="bg-white p-4 rounded border border-gray-200">
-            <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">Follow-up Due</div>
-            <div className="text-2xl font-semibold text-gray-950 mt-1">{analytics.follow_up_needed}</div>
-            <div className="text-xs text-gray-400 mt-0.5">&gt; 3 days since contact</div>
+
+          {/* Card 4: Follow-up Due */}
+          <div 
+            onClick={() => setStatusFilter('FOLLOWED_UP')}
+            className={`bg-white p-4 sm:p-5 rounded-2xl border transition cursor-pointer group shadow-xs ${
+              statusFilter === 'FOLLOWED_UP' ? 'border-sky-400 ring-2 ring-sky-500/10' : 'border-slate-200/80 hover:border-sky-300'
+            }`}
+            title="Click to filter follow-ups"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Follow-up Due</span>
+              <div className="p-1.5 rounded-lg bg-amber-50 text-amber-600 group-hover:scale-105 transition">
+                <Clock className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="text-2xl sm:text-3xl font-bold text-slate-950 mt-2">
+              {analytics.follow_up_needed}
+            </div>
+            <div className="text-xs text-slate-400 mt-1 flex items-center justify-between">
+              <span>&gt; 3 days since contact</span>
+              <span className="text-sky-600 font-medium text-[11px] group-hover:underline">Filter &rarr;</span>
+            </div>
           </div>
         </section>
 
-        {/* Controls Bar & Filters */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-          <div className="inline-flex bg-gray-100 p-0.5 rounded border border-gray-200 text-xs font-medium">
-            {['ALL', 'NOT_CONTACTED', 'CONTACTED', 'REPLIED', 'FOLLOWED_UP', 'BOUNCED'].map(tab => (
+        {/* Filter Tabs & Search Bar */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          {/* Status Tabs */}
+          <div className="inline-flex flex-wrap bg-white p-1 rounded-xl border border-slate-200 shadow-2xs gap-1">
+            {filterTabs.map(tab => (
               <button
-                key={tab}
-                onClick={() => setStatusFilter(tab)}
-                className={`px-3 py-1.5 rounded transition ${
-                  statusFilter === tab
-                    ? 'bg-white text-gray-950 shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900'
+                key={tab.id}
+                type="button"
+                onClick={() => setStatusFilter(tab.id)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                  statusFilter === tab.id
+                    ? 'bg-gradient-to-r from-sky-500 to-blue-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                 }`}
               >
-                {tab === 'ALL' ? 'All' : tab.replace('_', ' ').toLowerCase().replace(/\b\w/g, l => l.toUpperCase())}
+                <span>{tab.label}</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                  statusFilter === tab.id ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
+                }`}>
+                  {tab.count}
+                </span>
               </button>
             ))}
           </div>
 
-          <div className="relative">
-            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
+          {/* Search Box */}
+          <div className="relative min-w-[280px]">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
             <input
               type="text"
-              placeholder="Search name, company, email, X..."
+              placeholder="Search name, company, email..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="w-full sm:w-64 pl-9 pr-3 py-1.5 text-xs bg-white border border-gray-200 rounded focus:outline-none focus:border-gray-900 transition"
+              className="w-full pl-9 pr-8 py-2 text-xs bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 transition shadow-2xs"
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Leads Table */}
-        <div className="bg-white border border-gray-200 rounded overflow-hidden">
+        {/* Prospect Data Table */}
+        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-gray-50 border-b border-gray-200 text-gray-500 uppercase font-semibold tracking-wider">
-                <tr>
-                  <th className="px-4 py-3">Name & Title</th>
-                  <th className="px-4 py-3">Company</th>
-                  <th className="px-4 py-3">Email & X Handle</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Link Clicks</th>
-                  <th className="px-4 py-3">Last Contacted</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-slate-50/80 border-b border-slate-200/80 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                  <th className="px-5 py-3.5">Name & Role</th>
+                  <th className="px-4 py-3.5">Company</th>
+                  <th className="px-4 py-3.5">Email & Handle</th>
+                  <th className="px-4 py-3.5">Status</th>
+                  <th className="px-4 py-3.5">Link Clicks</th>
+                  <th className="px-4 py-3.5">Last Contacted</th>
+                  <th className="px-5 py-3.5 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
+              <tbody className="divide-y divide-slate-100">
                 {isLoading ? (
                   <tr>
-                    <td colSpan={7} className="text-center py-10 text-gray-400">
-                      Loading outreach contacts...
+                    <td colSpan={7} className="px-6 py-16 text-center text-slate-400">
+                      <RefreshCw className="w-6 h-6 animate-spin mx-auto text-sky-500 mb-2" />
+                      <span>Loading outreach contacts...</span>
                     </td>
                   </tr>
                 ) : leads.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="text-center py-12 text-gray-400">
-                      No contacts found in this view.
+                    <td colSpan={7} className="px-6 py-16 text-center text-slate-400">
+                      <Inbox className="w-8 h-8 mx-auto text-slate-300 mb-2" />
+                      <p className="font-semibold text-slate-700 text-sm">No contacts found</p>
+                      <p className="text-xs text-slate-400 mt-1">
+                        Try adjusting your filters or import your target outreach list.
+                      </p>
                     </td>
                   </tr>
                 ) : (
@@ -808,67 +985,84 @@ export default function OutreachEngineDashboard() {
                     const clicksCount = lead.click_count || 0;
 
                     return (
-                      <tr key={lead.id} className="hover:bg-gray-50/60 transition">
-                        <td className="px-4 py-3">
-                          <div className="font-medium text-gray-900">{fullName}</div>
-                          <div className="text-gray-500 text-[11px]">{lead.role || '-'}</div>
+                      <tr 
+                        key={lead.id} 
+                        onClick={() => openLeadDrawer(lead.id)}
+                        className="hover:bg-sky-50/30 transition cursor-pointer group"
+                      >
+                        <td className="px-5 py-3.5">
+                          <div className="font-semibold text-slate-900 group-hover:text-sky-700 transition">
+                            {fullName}
+                          </div>
+                          <div className="text-slate-400 text-[11px] truncate max-w-[200px]">
+                            {lead.role || '-'}
+                          </div>
                         </td>
-                        <td className="px-4 py-3 font-medium text-gray-900">
+                        <td className="px-4 py-3.5 font-medium text-slate-800">
                           {lead.company || '-'}
                         </td>
-                        <td className="px-4 py-3">
-                          <div className="text-gray-900 font-mono text-[11px]">{lead.email}</div>
+                        <td className="px-4 py-3.5">
+                          <div className="font-mono text-[11px] text-slate-700">
+                            {lead.email}
+                          </div>
                           {lead.x_handle && (
-                            <div className="text-blue-600 font-mono text-[10px] mt-0.5">
+                            <div className="text-sky-600 font-mono text-[10px] mt-0.5">
                               X: {lead.x_handle}
                             </div>
                           )}
                         </td>
-                        <td className="px-4 py-3">
-                          <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-medium border ${getStatusBadge(lead.status)}`}>
+                        <td className="px-4 py-3.5">
+                          <span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-semibold border ${getStatusBadge(lead.status)}`}>
                             {lead.status.replace('_', ' ').toLowerCase()}
                           </span>
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3.5" onClick={e => e.stopPropagation()}>
                           <button
+                            type="button"
                             onClick={() => openClicksModal(lead.id)}
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium transition ${
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold transition ${
                               clicksCount > 0
-                                ? 'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100'
-                                : 'text-gray-400 hover:text-gray-700'
+                                ? 'bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100'
+                                : 'text-slate-400 hover:text-slate-600'
                             }`}
-                            title="Click to view details of links clicked by this prospect"
+                            title="Inspect links clicked by this prospect"
                           >
-                            <MousePointerClick className="w-3 h-3" />
+                            <MousePointerClick className="w-3 h-3 text-sky-600" />
                             <span>{clicksCount} {clicksCount === 1 ? 'click' : 'clicks'}</span>
                           </button>
                         </td>
-                        <td className="px-4 py-3 text-gray-500">
+                        <td className="px-4 py-3.5 text-slate-500 font-mono text-[11px]">
                           {lastContactedStr}
                         </td>
-                        <td className="px-4 py-3 text-right">
+                        <td className="px-5 py-3.5 text-right" onClick={e => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-1.5">
                             <button
+                              type="button"
                               onClick={() => openLeadDrawer(lead.id)}
-                              className="px-2.5 py-1 text-[11px] font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition"
+                              className="px-2.5 py-1 text-[11px] font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-sky-50/50 hover:border-sky-300 hover:text-sky-700 transition"
                             >
                               History
                             </button>
                             <button
+                              type="button"
                               onClick={() => openCompose(lead)}
-                              className="px-2.5 py-1 text-[11px] font-medium text-white bg-gray-900 rounded hover:bg-black transition"
+                              className="px-3 py-1 text-[11px] font-semibold text-white bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 rounded-lg shadow-2xs transition"
                             >
                               Message
                             </button>
                             <button
+                              type="button"
                               onClick={() => openEditLeadModal(lead)}
-                              className="px-2 py-1 text-[11px] text-gray-500 hover:text-gray-900 bg-white border border-gray-200 rounded hover:bg-gray-50 transition"
+                              className="p-1 text-slate-400 hover:text-sky-600 hover:bg-sky-50/50 rounded-lg transition"
+                              title="Edit contact details"
                             >
                               <Edit className="w-3.5 h-3.5" />
                             </button>
                             <button
+                              type="button"
                               onClick={() => handleDeleteLead(lead.id)}
-                              className="px-2 py-1 text-[11px] text-red-600 hover:text-red-800 bg-white border border-red-200 rounded hover:bg-red-50 transition"
+                              className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50/50 rounded-lg transition"
+                              title="Delete contact"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -882,120 +1076,18 @@ export default function OutreachEngineDashboard() {
             </table>
           </div>
         </div>
-
       </div>
 
-
-
-      {/* Link Clicks Pop-up Modal */}
-      {isClicksModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-          <div className="bg-white rounded-lg border border-gray-200 max-w-2xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
-            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <MousePointerClick className="w-4 h-4 text-blue-600" />
-                <h3 className="text-sm font-semibold text-gray-950">
-                  {clicksModalLeadId
-                    ? `Link Clicks for Prospect #${clicksModalLeadId}`
-                    : 'All Tracked Link Clicks & Activity'}
-                </h3>
-              </div>
-              <button 
-                onClick={() => setIsClicksModalOpen(false)} 
-                className="p-1 text-gray-400 hover:text-gray-700 rounded"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="p-6 overflow-y-auto flex-1 space-y-4">
-              {isLoadingClicks ? (
-                <div className="text-center py-10 text-xs text-gray-400">Loading click events...</div>
-              ) : clicksData.length === 0 ? (
-                <div className="text-center py-12 text-xs text-gray-500 border border-dashed border-gray-200 rounded-lg p-6">
-                  <p className="font-medium text-gray-800">No link clicks recorded yet.</p>
-                  <p className="text-gray-400 mt-1 text-[11px]">
-                    When a prospect opens any link (e.g. portfolio, GitHub, or live projects) in your outreach emails, their click and UTM data will show up right here in real time.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {clicksData.map(c => (
-                    <div key={c.id} className="p-3.5 bg-white border border-gray-200 rounded-lg shadow-sm text-xs space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <div className="font-semibold text-gray-950 flex items-center gap-1.5">
-                          <span>{c.lead_name || 'Prospect'}</span>
-                          <span className="text-gray-400 font-normal">({c.lead_company || c.lead_email})</span>
-                        </div>
-                        <span className="text-[11px] text-gray-500">
-                          {c.clicked_at ? new Date(c.clicked_at).toLocaleString() : '-'}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-1.5 pt-1">
-                        <span className="text-gray-500 font-medium">Destination:</span>
-                        <a
-                          href={c.target_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="font-mono text-blue-600 hover:underline flex items-center gap-1 truncate max-w-md"
-                        >
-                          <span>{c.target_url}</span>
-                          <ExternalLink className="w-3 h-3 shrink-0" />
-                        </a>
-                      </div>
-
-                      <div className="flex flex-wrap gap-1.5 pt-1.5">
-                        <span className="px-2 py-0.5 bg-gray-50 border border-gray-200 rounded font-mono text-[10px] text-gray-700">
-                          utm_source: {c.utm_source || 'outreach'}
-                        </span>
-                        {c.utm_campaign && (
-                          <span className="px-2 py-0.5 bg-gray-50 border border-gray-200 rounded font-mono text-[10px] text-gray-700">
-                            utm_campaign: {c.utm_campaign}
-                          </span>
-                        )}
-                        {c.utm_content && (
-                          <span className="px-2 py-0.5 bg-gray-50 border border-gray-200 rounded font-mono text-[10px] text-gray-700">
-                            utm_content: {c.utm_content}
-                          </span>
-                        )}
-                        {c.ip_address && (
-                          <span className="px-2 py-0.5 bg-gray-50 border border-gray-200 rounded font-mono text-[10px] text-gray-400">
-                            IP: {c.ip_address}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="px-6 py-3 border-t border-gray-200 bg-gray-50 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setIsClicksModalOpen(false)}
-                className="px-4 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Replies & Inbound Notifications Modal */}
+      {/* Prospect Replies & Inbox Modal */}
       {isRepliesModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-          <div className="bg-white rounded-lg border border-gray-200 max-w-2xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
-            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
+          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
               <div className="flex items-center gap-2">
-                <Bell className="w-4 h-4 text-amber-600" />
-                <h3 className="text-sm font-semibold text-gray-950">
-                  Prospect Replies & Inbound Notifications
-                </h3>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-medium bg-amber-50 text-amber-800 border border-amber-200">
-                  {replies.length} Total
+                <Bell className="w-4 h-4 text-sky-600" />
+                <h3 className="font-bold text-sm text-slate-950">Inbound Replies & Notifications</h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-sky-800">
+                  {replies.length}
                 </span>
               </div>
               <div className="flex items-center gap-2">
@@ -1003,82 +1095,72 @@ export default function OutreachEngineDashboard() {
                   type="button"
                   onClick={handleManualSyncMailbox}
                   disabled={isSyncingMailbox}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-60 transition"
-                  title="Check Gmail IMAP for new replies right now"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-sky-50/50 disabled:opacity-60 transition"
                 >
-                  <RefreshCw className={`w-3 h-3 ${isSyncingMailbox ? 'animate-spin' : ''}`} />
+                  <RefreshCw className={`w-3 h-3 text-sky-600 ${isSyncingMailbox ? 'animate-spin' : ''}`} />
                   <span>{isSyncingMailbox ? 'Checking...' : 'Check Inbox'}</span>
                 </button>
                 <button 
+                  type="button"
                   onClick={() => setIsRepliesModalOpen(false)} 
-                  className="p-1 text-gray-400 hover:text-gray-700 rounded"
+                  className="p-1 text-slate-400 hover:text-slate-700 rounded-lg"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
             </div>
 
-            <div className="p-6 overflow-y-auto flex-1 space-y-4">
+            <div className="p-6 overflow-y-auto flex-1 space-y-3">
               {replies.length === 0 ? (
-                <div className="text-center py-12 text-xs text-gray-500 border border-dashed border-gray-200 rounded-lg p-6">
-                  <p className="font-medium text-gray-800">No prospect replies yet.</p>
-                  <p className="text-gray-400 mt-1 text-[11px]">
-                    Your background IMAP loop checks Gmail for new inbound messages every 5 minutes. When someone replies, they will appear here instantly.
+                <div className="text-center py-12 text-xs text-slate-500 border border-dashed border-slate-200 rounded-xl p-6">
+                  <Inbox className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                  <p className="font-semibold text-slate-800">No prospect replies yet</p>
+                  <p className="text-slate-400 mt-1 text-[11px]">
+                    The keepalive worker checks Gmail IMAP for new replies every 10 minutes.
                   </p>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {replies.map(r => (
-                    <div 
-                      key={r.id} 
-                      className="p-4 bg-white border border-gray-200 rounded-lg shadow-sm hover:border-gray-400 text-xs space-y-2 transition cursor-pointer"
-                      onClick={() => {
-                        if (r.lead_id) openLeadDrawer(r.lead_id);
-                        setIsRepliesModalOpen(false);
-                      }}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-gray-950">
-                            {r.lead_name || r.sender}
-                          </span>
-                          <span className="text-gray-400 font-mono text-[11px]">
-                            ({r.lead_company || r.lead_email})
-                          </span>
-                        </div>
-                        <span className="text-[11px] text-gray-500 font-mono">
-                          {r.sent_at ? new Date(r.sent_at).toLocaleString() : ''}
-                        </span>
+                replies.map(r => (
+                  <div 
+                    key={r.id} 
+                    className="p-4 bg-white border border-slate-200 rounded-xl shadow-2xs hover:border-sky-400 text-xs space-y-2 transition cursor-pointer group"
+                    onClick={() => {
+                      if (r.lead_id) openLeadDrawer(r.lead_id);
+                      setIsRepliesModalOpen(false);
+                    }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="font-semibold text-slate-900 group-hover:text-sky-700 transition">
+                        {r.lead_name || r.sender}
                       </div>
-
-                      <div className="font-medium text-gray-900 truncate">
-                        {r.subject}
-                      </div>
-
-                      <div className="text-gray-600 line-clamp-2 leading-relaxed bg-gray-50 p-2.5 rounded border border-gray-100 font-sans text-[11px]">
-                        {r.snippet || 'No message preview available.'}
-                      </div>
-
-                      <div className="flex items-center justify-between pt-1">
-                        <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-medium ${getStatusBadge(r.lead_status || 'REPLIED')}`}>
-                          {r.lead_status || 'REPLIED'}
-                        </span>
-                        <span className="text-blue-600 hover:underline text-[11px] font-medium flex items-center gap-1">
-                          <span>Open Thread & Details</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </span>
-                      </div>
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        {r.sent_at ? new Date(r.sent_at).toLocaleString() : ''}
+                      </span>
                     </div>
-                  ))}
-                </div>
+                    <div className="font-medium text-slate-800 text-[11px]">
+                      {r.subject}
+                    </div>
+                    {r.snippet && (
+                      <p className="text-slate-600 text-[11px] line-clamp-2 bg-slate-50 p-2 rounded-lg font-sans">
+                        {r.snippet}
+                      </p>
+                    )}
+                    <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1">
+                      <span>{r.lead_company || 'Lead'}</span>
+                      <span className="text-sky-600 font-semibold group-hover:underline flex items-center gap-0.5">
+                        Open Thread <ChevronRight className="w-3 h-3" />
+                      </span>
+                    </div>
+                  </div>
+                ))
               )}
             </div>
 
-            <div className="px-6 py-3 border-t border-gray-200 bg-gray-50 flex justify-end">
+            <div className="px-6 py-3 border-t border-slate-200 bg-slate-50/80 flex justify-end">
               <button
                 type="button"
                 onClick={() => setIsRepliesModalOpen(false)}
-                className="px-4 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition"
+                className="px-4 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition"
               >
                 Close
               </button>
@@ -1089,57 +1171,75 @@ export default function OutreachEngineDashboard() {
 
       {/* Slide-over Drawer for Contact & History */}
       {activeDrawerLead && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black/20" onClick={() => setActiveDrawerLead(null)}>
+        <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/30 backdrop-blur-2xs" onClick={() => setActiveDrawerLead(null)}>
           <div 
-            className="w-full max-w-xl bg-white h-full shadow-2xl flex flex-col border-l border-gray-200"
+            className="w-full max-w-xl bg-white h-full shadow-2xl flex flex-col border-l border-slate-200 animate-in slide-in-from-right duration-200"
             onClick={e => e.stopPropagation()}
           >
-            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
               <div>
-                <h2 className="text-base font-semibold text-gray-950">
+                <h2 className="text-base font-bold text-slate-950">
                   {`${activeDrawerLead.first_name || ''} ${activeDrawerLead.last_name || ''}`.trim() || 'Contact Details'}
                 </h2>
-                <div className="text-xs text-gray-500">
+                <div className="text-xs text-slate-500 font-medium">
                   {activeDrawerLead.role || 'No Role'} &bull; {activeDrawerLead.company || 'No Company'}
                 </div>
               </div>
               <button 
+                type="button"
                 onClick={() => setActiveDrawerLead(null)}
-                className="p-1 text-gray-400 hover:text-gray-700 rounded"
+                className="p-1 text-slate-400 hover:text-slate-700 rounded-lg"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <div className="p-6 overflow-y-auto flex-1 space-y-5">
-              {/* Meta information */}
-              <div className="bg-gray-50 p-4 rounded border border-gray-200 text-xs space-y-2">
-                <div className="flex">
-                  <span className="w-24 text-gray-500">Email:</span>
-                  <span className="font-mono text-gray-900">{activeDrawerLead.email}</span>
+              {/* Meta information card */}
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">Email:</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-mono text-slate-900 font-medium">{activeDrawerLead.email}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(activeDrawerLead.email);
+                        showToast('Email copied to clipboard!');
+                      }}
+                      className="p-1 text-slate-400 hover:text-sky-600 rounded"
+                      title="Copy email"
+                    >
+                      <Copy className="w-3 h-3" />
+                    </button>
+                  </div>
                 </div>
                 {activeDrawerLead.x_handle && (
-                  <div className="flex">
-                    <span className="w-24 text-gray-500">X Handle:</span>
-                    <span className="font-mono text-blue-600">{activeDrawerLead.x_handle}</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500">X Handle:</span>
+                    <span className="font-mono text-sky-600 font-medium">{activeDrawerLead.x_handle}</span>
                   </div>
                 )}
-                <div className="flex">
-                  <span className="w-24 text-gray-500">Status:</span>
-                  <span className={`inline-flex px-2 py-0.2 rounded text-[10px] font-medium border ${getStatusBadge(activeDrawerLead.status)}`}>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">Status:</span>
+                  <span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-semibold border ${getStatusBadge(activeDrawerLead.status)}`}>
                     {activeDrawerLead.status.replace('_', ' ').toLowerCase()}
                   </span>
                 </div>
                 {activeDrawerLead.custom_hook && (
-                  <div className="flex">
-                    <span className="w-24 text-gray-500">Custom Hook:</span>
-                    <span className="text-gray-800">{activeDrawerLead.custom_hook}</span>
+                  <div className="pt-1 border-t border-slate-200/60">
+                    <span className="text-slate-500 block mb-0.5">Custom Hook:</span>
+                    <p className="text-slate-800 bg-white p-2 rounded-lg border border-slate-200/60 font-medium">
+                      {activeDrawerLead.custom_hook}
+                    </p>
                   </div>
                 )}
                 {activeDrawerLead.notes && (
-                  <div className="flex">
-                    <span className="w-24 text-gray-500">Notes:</span>
-                    <span className="text-gray-800">{activeDrawerLead.notes}</span>
+                  <div className="pt-1 border-t border-slate-200/60">
+                    <span className="text-slate-500 block mb-0.5">Notes:</span>
+                    <p className="text-slate-700 bg-white p-2 rounded-lg border border-slate-200/60">
+                      {activeDrawerLead.notes}
+                    </p>
                   </div>
                 )}
               </div>
@@ -1148,26 +1248,27 @@ export default function OutreachEngineDashboard() {
               {activeDrawerLead.clicks && activeDrawerLead.clicks.length > 0 && (
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500 flex items-center gap-1.5">
-                      <MousePointerClick className="w-3.5 h-3.5 text-blue-600" />
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                      <MousePointerClick className="w-3.5 h-3.5 text-sky-600" />
                       <span>Link Clicks ({activeDrawerLead.clicks.length})</span>
                     </h3>
                     <button
+                      type="button"
                       onClick={() => openClicksModal(activeDrawerLead.id)}
-                      className="text-[11px] text-blue-600 hover:underline"
+                      className="text-[11px] text-sky-600 font-semibold hover:underline"
                     >
                       View Details
                     </button>
                   </div>
                   <div className="space-y-1.5">
                     {activeDrawerLead.clicks.map(c => (
-                      <div key={c.id} className="p-2.5 rounded bg-blue-50/50 border border-blue-200 text-xs">
-                        <div className="flex items-center justify-between text-[11px] text-gray-600 mb-0.5">
-                          <span className="font-medium text-gray-900 truncate max-w-xs">{c.target_url}</span>
-                          <span className="text-[10px] text-gray-500">{new Date(c.clicked_at).toLocaleString()}</span>
+                      <div key={c.id} className="p-2.5 rounded-xl bg-sky-50/50 border border-sky-100 text-xs">
+                        <div className="flex items-center justify-between text-[11px] text-slate-600 mb-0.5">
+                          <span className="font-semibold text-slate-900 truncate max-w-xs">{c.target_url}</span>
+                          <span className="text-[10px] text-slate-400 font-mono">{new Date(c.clicked_at).toLocaleString()}</span>
                         </div>
-                        <div className="text-[10px] text-gray-500 font-mono">
-                          utm_campaign: {c.utm_campaign || 'outreach'} &bull; content: {c.utm_content || 'prospect'}
+                        <div className="text-[10px] text-slate-500 font-mono">
+                          campaign: {c.utm_campaign || 'outreach'} &bull; content: {c.utm_content || 'prospect'}
                         </div>
                       </div>
                     ))}
@@ -1175,94 +1276,109 @@ export default function OutreachEngineDashboard() {
                 </div>
               )}
 
-              {/* Message History */}
+              {/* Message History Thread */}
               <div>
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
                     Message History ({activeDrawerLead.messages?.length || 0})
                   </h3>
                   <button
+                    type="button"
                     onClick={() => openCompose(activeDrawerLead)}
-                    className="px-3 py-1 text-xs font-medium text-white bg-gray-900 rounded hover:bg-black transition"
+                    className="px-3 py-1.5 text-xs font-semibold text-white bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 rounded-xl shadow-2xs transition"
                   >
                     Send Message
                   </button>
                 </div>
 
-                <div className="space-y-3">
-                  {!activeDrawerLead.messages || activeDrawerLead.messages.length === 0 ? (
-                    <div className="text-center py-8 text-xs text-gray-400 border border-dashed border-gray-200 rounded">
-                      No messages exchanged yet.
-                    </div>
-                  ) : (
-                    activeDrawerLead.messages.map(msg => {
-                      const isSent = msg.direction === 'SENT';
-                      const channelLabel = 
-                        msg.channel === 'X_DM' ? 'X DM' :
-                        msg.channel === 'LINKEDIN_CONNECT' ? 'LinkedIn Connect' :
-                        msg.channel === 'LINKEDIN_DM' ? 'LinkedIn DM' : 'Email';
-                      return (
-                        <div
-                          key={msg.id}
-                          className={`p-3.5 rounded border text-xs ${
-                            isSent ? 'bg-white border-gray-200 border-l-2 border-l-gray-900' : 'bg-emerald-50/50 border-emerald-200 border-l-2 border-l-emerald-600'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between text-[11px] text-gray-500 mb-1">
-                            <span className="font-medium text-gray-800">
-                              {isSent ? 'Sent to: ' : 'From: '} {isSent ? msg.recipient : msg.sender} ({channelLabel})
-                            </span>
-                            <span>{new Date(msg.sent_at).toLocaleString()}</span>
-                          </div>
-                          <div className="font-semibold text-gray-950 mb-1.5">{msg.subject}</div>
-                          <div className="text-gray-700 whitespace-pre-wrap leading-relaxed">
-                            {msg.body_text || msg.snippet}
-                          </div>
+                {!activeDrawerLead.messages || activeDrawerLead.messages.length === 0 ? (
+                  <div className="text-center py-8 text-xs text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200 p-4">
+                    No message history recorded yet.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {activeDrawerLead.messages.map(msg => (
+                      <div 
+                        key={msg.id} 
+                        className={`p-4 rounded-xl border text-xs space-y-1.5 ${
+                          msg.direction === 'RECEIVED'
+                            ? 'bg-emerald-50/40 border-emerald-200'
+                            : 'bg-white border-slate-200 shadow-2xs'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className={`font-semibold px-2 py-0.5 rounded text-[10px] ${
+                            msg.direction === 'RECEIVED'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-sky-100 text-sky-800'
+                          }`}>
+                            {msg.direction === 'RECEIVED' ? 'Inbound Reply' : 'Sent Email'}
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            {msg.sent_at ? new Date(msg.sent_at).toLocaleString() : ''}
+                          </span>
                         </div>
-                      );
-                    })
-                  )}
-                </div>
+                        <div className="font-semibold text-slate-900 text-xs">
+                          {msg.subject}
+                        </div>
+                        <div className="text-slate-600 text-[11px] whitespace-pre-wrap leading-relaxed font-sans bg-slate-50/80 p-2.5 rounded-lg border border-slate-200/60">
+                          {msg.body_text || msg.snippet}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Compose Email Modal */}
+      {/* Compose & Send Outreach Modal */}
       {isComposeModalOpen && composeLead && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-          <div className="bg-white rounded-lg border border-gray-200 max-w-xl w-full shadow-xl overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-950">Send Email Outreach</h3>
-              <button onClick={() => setIsComposeModalOpen(false)} className="p-1 text-gray-400 hover:text-gray-700">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
+          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
+              <div>
+                <h3 className="font-bold text-sm text-slate-950 flex items-center gap-1.5">
+                  <Send className="w-4 h-4 text-sky-600" />
+                  <span>Send Email Outreach</span>
+                </h3>
+                <div className="text-xs text-slate-500 font-medium">
+                  To: <span className="text-slate-900 font-semibold">{composeLead.first_name} {composeLead.last_name}</span> ({composeLead.email})
+                </div>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setIsComposeModalOpen(false)} 
+                className="p-1 text-slate-400 hover:text-slate-700 rounded-lg"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="p-5 space-y-4">
-              {/* Recipient info */}
+            <div className="p-6 overflow-y-auto flex-1 space-y-4">
+              {/* Template Picker */}
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">
-                  Recipient Email
-                </label>
-                <input
-                  type="text"
-                  readOnly
-                  value={`${composeLead.first_name || ''} <${composeLead.email}>`}
-                  className="w-full px-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded text-gray-600 font-mono"
-                />
-              </div>
-
-              {/* Template selector */}
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Choose Template</label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-semibold text-slate-700">Outreach Template</label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsComposeModalOpen(false);
+                      openTemplateBuilder();
+                    }}
+                    className="text-[11px] text-sky-600 font-semibold hover:underline"
+                  >
+                    Manage Templates
+                  </button>
+                </div>
                 <select
                   value={composeTemplateId}
                   onChange={handleTemplateChange}
-                  className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900"
+                  className="w-full px-3 py-2 text-xs bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 font-medium shadow-2xs"
                 >
-                  <option value="">Custom Outreach</option>
+                  <option value="">Custom Freeform Copy</option>
                   {templates.map(t => (
                     <option key={t.id} value={t.id}>
                       {t.name} ({t.category})
@@ -1271,420 +1387,363 @@ export default function OutreachEngineDashboard() {
                 </select>
               </div>
 
+              {/* Subject */}
               <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-xs font-medium text-gray-700">Subject</label>
-                  <span className="text-[10px] text-gray-400">Click preset to apply:</span>
-                </div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">Subject Line</label>
                 <input
                   type="text"
                   value={composeSubject}
                   onChange={e => setComposeSubject(e.target.value)}
-                  placeholder="Email subject..."
-                  className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900 font-sans"
+                  placeholder="Enter email subject..."
+                  className="w-full px-3 py-2 text-xs bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 font-medium shadow-2xs"
                 />
-                <div className="flex flex-wrap gap-1 mt-1.5">
-                  {[
-                    '{{role}} application: Praroop Anand',
-                    'Praroop / {{role}} at {{company}}',
-                    '{{company}} campus visit / {{role}} application',
-                    'Engineering & AI systems for {{company}}',
-                    'Quick note on {{custom_hook}} (Praroop)'
-                  ].map(preset => {
-                    const rendered = preset
-                      .replace(/\{\{\s*company\s*\}\}/gi, composeLead?.company || 'company')
-                      .replace(/\{\{\s*role\s*\}\}/gi, composeLead?.role || 'role')
-                      .replace(/\{\{\s*custom_hook\s*\}\}/gi, composeLead?.custom_hook || 'engineering');
-                    return (
-                      <button
-                        key={preset}
-                        type="button"
-                        onClick={() => setComposeSubject(rendered)}
-                        className="px-2 py-0.5 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded border border-gray-200 text-[10px] truncate max-w-[260px] transition"
-                        title={`Use subject: ${rendered}`}
-                      >
-                        {rendered}
-                      </button>
-                    );
-                  })}
+              </div>
+
+              {/* Body */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-semibold text-slate-700">Message Body</label>
+                  <button
+                    type="button"
+                    onClick={() => setIsPreviewMode(!isPreviewMode)}
+                    className="text-[11px] text-sky-600 font-semibold hover:underline flex items-center gap-1"
+                  >
+                    <Eye className="w-3 h-3" />
+                    <span>{isPreviewMode ? 'Edit Mode' : 'Live Preview'}</span>
+                  </button>
+                </div>
+
+                {isPreviewMode ? (
+                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs whitespace-pre-wrap leading-relaxed font-sans min-h-[220px]">
+                    {composeBody}
+                  </div>
+                ) : (
+                  <textarea
+                    rows={10}
+                    value={composeBody}
+                    onChange={e => setComposeBody(e.target.value)}
+                    placeholder="Write your genuine, professional outreach copy..."
+                    className="w-full p-3 text-xs bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 leading-relaxed font-sans shadow-2xs"
+                  />
+                )}
+
+                {/* Variable Tokens Helper Chips */}
+                <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                  <span className="text-[11px] text-slate-400">Tokens:</span>
+                  {['{{firstName}}', '{{company}}', '{{role}}', '{{custom_hook}}'].map(tok => (
+                    <button
+                      key={tok}
+                      type="button"
+                      onClick={() => insertVariableToken(tok)}
+                      className="px-2 py-0.5 text-[10px] font-mono bg-sky-50 hover:bg-sky-100 text-sky-700 rounded-md border border-sky-200 transition"
+                      title={`Click to insert ${tok}`}
+                    >
+                      {tok}
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">
-                  Message Body
-                </label>
-                <textarea
-                  rows={8}
-                  value={composeBody}
-                  onChange={e => setComposeBody(e.target.value)}
-                  placeholder="Write your outreach message..."
-                  className="w-full px-3 py-2 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900 leading-relaxed font-sans"
-                />
-              </div>
-
-              {/* Options */}
-              <div className="space-y-2 pt-1">
-                <div className="flex items-center gap-2">
+              {/* Options Checkboxes */}
+              <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2 text-xs">
+                <label className="flex items-center gap-2 cursor-pointer text-slate-800 font-medium">
                   <input
                     type="checkbox"
-                    id="attach-resume-check"
                     checked={attachResume}
                     onChange={e => setAttachResume(e.target.checked)}
-                    className="rounded border-gray-300 text-gray-900 focus:ring-0 w-3.5 h-3.5"
+                    className="rounded text-sky-600 focus:ring-sky-500"
                   />
-                  <label htmlFor="attach-resume-check" className="text-xs text-gray-700 font-medium flex items-center gap-1 cursor-pointer">
-                    <Paperclip className="w-3 h-3 text-gray-500" />
-                    <span>Attach Resume (Praroop_Anand.pdf)</span>
-                  </label>
-                </div>
-
-                <div className="flex items-center gap-2">
+                  <span>Attach PDF Resume ({resumeStatus.filename})</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer text-slate-800 font-medium">
                   <input
                     type="checkbox"
-                    id="utm-tracking-check"
                     checked={enableUTMTracking}
                     onChange={e => setEnableUTMTracking(e.target.checked)}
-                    className="rounded border-gray-300 text-gray-900 focus:ring-0 w-3.5 h-3.5"
+                    className="rounded text-sky-600 focus:ring-sky-500"
                   />
-                  <label htmlFor="utm-tracking-check" className="text-xs text-gray-700 font-medium flex items-center gap-1 cursor-pointer">
-                    <Sparkles className="w-3 h-3 text-gray-500" />
-                    <span>Disguise all links with UTM parameters (utm_source=outreach&utm_campaign=...)</span>
-                  </label>
-                </div>
+                  <span>Tag links with UTM tracking parameters</span>
+                </label>
               </div>
             </div>
 
-            <div className="px-5 py-3 border-t border-gray-200 bg-gray-50 flex justify-end gap-2">
+            <div className="px-6 py-3.5 border-t border-slate-200 bg-slate-50/80 flex items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setIsComposeModalOpen(false)}
-                className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition"
+                className="px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition"
               >
                 Cancel
               </button>
               <button
                 type="button"
+                onClick={handleSendEmail}
                 disabled={isSending}
-                onClick={handleSendMessage}
-                className="px-4 py-1.5 text-xs font-medium text-white bg-gray-900 hover:bg-black rounded disabled:opacity-60 transition"
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 rounded-xl shadow-xs shadow-sky-500/25 transition disabled:opacity-60"
               >
-                {isSending ? 'Sending...' : 'Send via Gmail'}
+                <Send className="w-3.5 h-3.5" />
+                <span>{isSending ? 'Dispatching...' : 'Send Outreach'}</span>
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Template Builder & Manager Modal */}
+      {/* Template Builder Modal */}
       {isTemplateBuilderOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-          <div className="bg-white rounded-lg border border-gray-200 max-w-4xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
+          <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
               <div className="flex items-center gap-2">
-                <Layers className="w-4 h-4 text-gray-900" />
-                <h3 className="text-sm font-semibold text-gray-950">Outreach Template Builder</h3>
+                <Layers className="w-4 h-4 text-sky-600" />
+                <h3 className="font-bold text-sm text-slate-950">Outreach Template Builder</h3>
               </div>
-              <button onClick={() => setIsTemplateBuilderOpen(false)} className="p-1 text-gray-400 hover:text-gray-700">
+              <button 
+                type="button"
+                onClick={() => setIsTemplateBuilderOpen(false)} 
+                className="p-1 text-slate-400 hover:text-slate-700 rounded-lg"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-gray-200 flex-1 overflow-hidden">
-              
-              {/* Templates List Column */}
-              <div className="p-4 overflow-y-auto space-y-2 bg-gray-50/50">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[11px] uppercase font-semibold text-gray-500 tracking-wider">Templates</span>
-                  <button
-                    onClick={() => openTemplateBuilder()}
-                    className="text-[11px] font-medium text-gray-900 hover:underline flex items-center gap-1"
-                  >
-                    <Plus className="w-3 h-3" /> New
-                  </button>
-                </div>
-
-                {templates.map(tmpl => (
-                  <div
-                    key={tmpl.id}
-                    onClick={() => openTemplateBuilder(tmpl)}
-                    className={`p-3 rounded border cursor-pointer transition text-xs ${
-                      templateForm.id === tmpl.id
-                        ? 'bg-white border-gray-900 shadow-sm'
-                        : 'bg-white border-gray-200 hover:border-gray-400'
-                    }`}
-                  >
-                    <div className="font-semibold text-gray-900 truncate">{tmpl.name}</div>
-                    <div className="text-[10px] text-gray-500 mt-1 flex items-center justify-between">
-                      <span>{tmpl.category}</span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteTemplate(tmpl.id);
-                        }}
-                        className="text-red-500 hover:text-red-700"
-                        title="Delete template"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
+            <div className="grid grid-cols-1 md:grid-cols-3 flex-1 overflow-hidden">
+              {/* Template list sidebar */}
+              <div className="border-r border-slate-200 p-4 overflow-y-auto space-y-2 bg-slate-50/50">
+                <button
+                  type="button"
+                  onClick={() => openTemplateBuilder(null)}
+                  className="w-full py-2 px-3 text-xs font-semibold bg-white border border-dashed border-sky-300 text-sky-600 rounded-xl hover:bg-sky-50 flex items-center justify-center gap-1.5 transition"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Create New Template</span>
+                </button>
+                <div className="space-y-1.5 pt-2">
+                  {templates.map(tpl => (
+                    <div
+                      key={tpl.id}
+                      onClick={() => openTemplateBuilder(tpl)}
+                      className={`p-3 rounded-xl border text-xs cursor-pointer transition ${
+                        templateForm.id === tpl.id
+                          ? 'bg-white border-sky-500 shadow-xs'
+                          : 'bg-white border-slate-200/80 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="font-semibold text-slate-900 truncate">{tpl.name}</div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">{tpl.category}</div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
 
-              {/* Template Editor Form Column */}
-              <div className="p-5 md:col-span-2 overflow-y-auto space-y-4">
+              {/* Form panel */}
+              <div className="col-span-2 p-6 overflow-y-auto space-y-4">
                 <form onSubmit={handleSaveTemplate} className="space-y-4">
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Template Name</label>
+                      <label className="text-xs font-semibold text-slate-700 block mb-1">Template Name</label>
                       <input
                         type="text"
-                        required
                         value={templateForm.name}
                         onChange={e => setTemplateForm({ ...templateForm, name: e.target.value })}
-                        placeholder="e.g. AI Production Systems Pitch"
-                        className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900"
+                        placeholder="e.g. Founder Quick Pitch"
+                        className="w-full px-3 py-2 text-xs bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 font-medium"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Category</label>
+                      <label className="text-xs font-semibold text-slate-700 block mb-1">Category</label>
                       <select
                         value={templateForm.category}
                         onChange={e => setTemplateForm({ ...templateForm, category: e.target.value })}
-                        className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900"
+                        className="w-full px-3 py-2 text-xs bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 font-medium"
                       >
                         <option value="Cold Outreach">Cold Outreach</option>
                         <option value="Follow-up">Follow-up</option>
-                        <option value="X Direct Message">X Direct Message</option>
-                        <option value="Partnership">Partnership</option>
+                        <option value="Referral">Referral</option>
+                        <option value="Custom">Custom</option>
                       </select>
                     </div>
                   </div>
 
-                  {/* Variable Helper Chips */}
                   <div>
-                    <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wider mb-1.5">
-                      Insert Placeholders (Click to Add)
-                    </label>
-                    <div className="flex flex-wrap gap-1.5">
-                      {['firstName', 'company', 'role', 'custom_hook', 'email', 'x_handle'].map(v => (
-                        <button
-                          key={v}
-                          type="button"
-                          onClick={() => insertVariable(v, 'body')}
-                          className="px-2 py-0.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded font-mono text-[10px] border border-gray-300 transition"
-                        >
-                          +{`{{${v}}}`}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="block text-xs font-medium text-gray-700">Subject Template</label>
-                      <span className="text-[10px] text-gray-400">Presets:</span>
-                    </div>
+                    <label className="text-xs font-semibold text-slate-700 block mb-1">Subject Line Template</label>
                     <input
                       type="text"
                       value={templateForm.subject_template}
                       onChange={e => setTemplateForm({ ...templateForm, subject_template: e.target.value })}
-                      placeholder="e.g. {{role}} application: Praroop Anand"
-                      className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900 font-sans"
+                      placeholder="e.g. Engineering & AI systems for {{company}}"
+                      className="w-full px-3 py-2 text-xs bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 font-medium"
                     />
-                    <div className="flex flex-wrap gap-1 mt-1.5">
-                      {[
-                        '{{role}} application: Praroop Anand',
-                        'Praroop / {{role}} at {{company}}',
-                        '{{company}} campus visit / {{role}} application',
-                        'Engineering & AI systems for {{company}}',
-                        'Quick note on {{custom_hook}} (Praroop)'
-                      ].map(preset => (
-                        <button
-                          key={preset}
-                          type="button"
-                          onClick={() => setTemplateForm(prev => ({ ...prev, subject_template: preset }))}
-                          className="px-2 py-0.5 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded border border-gray-200 text-[10px] truncate max-w-[260px] transition"
-                        >
-                          {preset}
-                        </button>
-                      ))}
-                    </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Body Template</label>
+                    <label className="text-xs font-semibold text-slate-700 block mb-1">Body Template</label>
                     <textarea
-                      rows={9}
-                      required
+                      rows={8}
                       value={templateForm.body_template}
                       onChange={e => setTemplateForm({ ...templateForm, body_template: e.target.value })}
-                      placeholder="Write your genuine, professional outreach copy..."
-                      className="w-full px-3 py-2 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900 leading-relaxed font-sans"
+                      placeholder="Write template copy using tokens like {{firstName}}, {{company}}..."
+                      className="w-full p-3 text-xs bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 font-sans leading-relaxed"
                     />
                   </div>
 
-                  <div className="pt-2 flex items-center justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setIsTemplateBuilderOpen(false)}
-                      className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition"
-                    >
-                      Close
-                    </button>
+                  <div className="flex items-center justify-between pt-2">
+                    {templateForm.id ? (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteTemplate(templateForm.id)}
+                        className="px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-xl transition"
+                      >
+                        Delete Template
+                      </button>
+                    ) : <div />}
+
                     <button
                       type="submit"
-                      className="px-4 py-1.5 text-xs font-medium text-white bg-gray-900 rounded hover:bg-black transition"
+                      className="px-4 py-2 text-xs font-semibold text-white bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 rounded-xl shadow-xs transition"
                     >
-                      Save Template
+                      {templateForm.id ? 'Update Template' : 'Create Template'}
                     </button>
                   </div>
                 </form>
               </div>
-
             </div>
           </div>
         </div>
       )}
 
-      {/* Add / Edit Lead Modal */}
+      {/* Add / Edit Contact Modal */}
       {isLeadModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-          <div className="bg-white rounded-lg border border-gray-200 max-w-lg w-full shadow-xl overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-950">
-                {leadForm.id ? 'Edit Contact' : 'Add New Contact'}
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
+          <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
+              <h3 className="font-bold text-sm text-slate-950">
+                {leadForm.id ? 'Edit Prospect' : 'Add New Prospect'}
               </h3>
-              <button onClick={() => setIsLeadModalOpen(false)} className="p-1 text-gray-400 hover:text-gray-700">
+              <button 
+                type="button"
+                onClick={() => setIsLeadModalOpen(false)} 
+                className="p-1 text-slate-400 hover:text-slate-700 rounded-lg"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveLead}>
-              <div className="p-5 space-y-3.5">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">First Name</label>
-                    <input
-                      type="text"
-                      value={leadForm.first_name}
-                      onChange={e => setLeadForm({ ...leadForm, first_name: e.target.value })}
-                      placeholder="Alex"
-                      className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Last Name</label>
-                    <input
-                      type="text"
-                      value={leadForm.last_name}
-                      onChange={e => setLeadForm({ ...leadForm, last_name: e.target.value })}
-                      placeholder="Smith"
-                      className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Email *</label>
-                    <input
-                      type="email"
-                      required
-                      value={leadForm.email}
-                      onChange={e => setLeadForm({ ...leadForm, email: e.target.value })}
-                      placeholder="alex@company.com"
-                      className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">X Handle</label>
-                    <input
-                      type="text"
-                      value={leadForm.x_handle}
-                      onChange={e => setLeadForm({ ...leadForm, x_handle: e.target.value })}
-                      placeholder="@alex_ai"
-                      className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Company</label>
-                    <input
-                      type="text"
-                      value={leadForm.company}
-                      onChange={e => setLeadForm({ ...leadForm, company: e.target.value })}
-                      placeholder="Acme AI"
-                      className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Role</label>
-                    <input
-                      type="text"
-                      value={leadForm.role}
-                      onChange={e => setLeadForm({ ...leadForm, role: e.target.value })}
-                      placeholder="Founder / CTO"
-                      className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900"
-                    />
-                  </div>
-                </div>
-
+            <form onSubmit={handleSaveLead} className="p-6 space-y-3.5">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Status</label>
-                  <select
-                    value={leadForm.status}
-                    onChange={e => setLeadForm({ ...leadForm, status: e.target.value })}
-                    className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900"
-                  >
-                    <option value="NOT_CONTACTED">Not Contacted</option>
-                    <option value="CONTACTED">Contacted</option>
-                    <option value="FOLLOWED_UP">Followed Up</option>
-                    <option value="REPLIED">Replied</option>
-                    <option value="INTERESTED">Interested</option>
-                    <option value="ARCHIVED">Archived</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Custom Hook / Icebreaker</label>
+                  <label className="text-xs font-semibold text-slate-700 block mb-1">First Name</label>
                   <input
                     type="text"
-                    value={leadForm.custom_hook}
-                    onChange={e => setLeadForm({ ...leadForm, custom_hook: e.target.value })}
-                    placeholder="your recent funding round / blog on agent memory"
-                    className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900"
+                    value={leadForm.first_name}
+                    onChange={e => setLeadForm({ ...leadForm, first_name: e.target.value })}
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10"
                   />
                 </div>
-
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Notes</label>
-                  <textarea
-                    rows={3}
-                    value={leadForm.notes}
-                    onChange={e => setLeadForm({ ...leadForm, notes: e.target.value })}
-                    placeholder="Context, background, mutual connections..."
-                    className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900"
+                  <label className="text-xs font-semibold text-slate-700 block mb-1">Last Name</label>
+                  <input
+                    type="text"
+                    value={leadForm.last_name}
+                    onChange={e => setLeadForm({ ...leadForm, last_name: e.target.value })}
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10"
                   />
                 </div>
               </div>
 
-              <div className="px-5 py-3 border-t border-gray-200 bg-gray-50 flex justify-end gap-2">
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">Email *</label>
+                <input
+                  type="email"
+                  required
+                  value={leadForm.email}
+                  onChange={e => setLeadForm({ ...leadForm, email: e.target.value })}
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 font-mono"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-slate-700 block mb-1">Company</label>
+                  <input
+                    type="text"
+                    value={leadForm.company}
+                    onChange={e => setLeadForm({ ...leadForm, company: e.target.value })}
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-700 block mb-1">Role / Title</label>
+                  <input
+                    type="text"
+                    value={leadForm.role}
+                    onChange={e => setLeadForm({ ...leadForm, role: e.target.value })}
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-slate-700 block mb-1">X (Twitter) Handle</label>
+                  <input
+                    type="text"
+                    value={leadForm.x_handle}
+                    onChange={e => setLeadForm({ ...leadForm, x_handle: e.target.value })}
+                    placeholder="@handle"
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-700 block mb-1">Status</label>
+                  <select
+                    value={leadForm.status}
+                    onChange={e => setLeadForm({ ...leadForm, status: e.target.value })}
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 font-medium"
+                  >
+                    <option value="NOT_CONTACTED">Not Contacted</option>
+                    <option value="CONTACTED">Contacted</option>
+                    <option value="REPLIED">Replied</option>
+                    <option value="FOLLOWED_UP">Followed Up</option>
+                    <option value="BOUNCED">Bounced</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">Custom Personalization Hook</label>
+                <input
+                  type="text"
+                  value={leadForm.custom_hook}
+                  onChange={e => setLeadForm({ ...leadForm, custom_hook: e.target.value })}
+                  placeholder="e.g. building autonomous agents in stealth"
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">Notes</label>
+                <textarea
+                  rows={2}
+                  value={leadForm.notes}
+                  onChange={e => setLeadForm({ ...leadForm, notes: e.target.value })}
+                  className="w-full p-2.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setIsLeadModalOpen(false)}
-                  className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition"
+                  className="px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 text-xs font-medium text-white bg-gray-900 rounded hover:bg-black transition"
+                  className="px-4 py-2 text-xs font-semibold text-white bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 rounded-xl shadow-xs transition"
                 >
-                  Save Contact
+                  Save Prospect
                 </button>
               </div>
             </form>
@@ -1692,70 +1751,143 @@ export default function OutreachEngineDashboard() {
         </div>
       )}
 
-      {/* Import Modal */}
+      {/* CSV Import Modal */}
       {isImportModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-          <div className="bg-white rounded-lg border border-gray-200 max-w-lg w-full shadow-xl overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-950">Import Leads from Google Sheet / CSV</h3>
-              <button onClick={() => setIsImportModalOpen(false)} className="p-1 text-gray-400 hover:text-gray-700">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
+          <div className="bg-white w-full max-w-xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
+              <div className="flex items-center gap-2">
+                <FileSpreadsheet className="w-4 h-4 text-sky-600" />
+                <h3 className="font-bold text-sm text-slate-950">Import Prospects from CSV</h3>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setIsImportModalOpen(false)} 
+                className="p-1 text-slate-400 hover:text-slate-700 rounded-lg"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="p-5 space-y-3.5">
-              <div className="flex items-center justify-between">
-                <p className="text-xs text-gray-600 leading-relaxed">
-                  Paste CSV data or upload a file. Auto-detects <strong>Email, Name, Company, Role, X Handle, Custom Hook, Notes</strong>.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => csvFileInputRef.current?.click()}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-gray-800 bg-gray-100 hover:bg-gray-200 rounded border border-gray-300 transition shrink-0 ml-2"
-                >
-                  <Upload className="w-3 h-3 text-gray-600" />
-                  <span>Upload CSV</span>
-                </button>
+            <div className="p-6 space-y-4">
+              <div className="border-2 border-dashed border-slate-200 hover:border-sky-400 rounded-2xl p-6 text-center cursor-pointer transition bg-slate-50/50"
+                onClick={() => csvFileInputRef.current?.click()}
+              >
+                <Upload className="w-8 h-8 text-sky-500 mx-auto mb-2" />
+                <p className="text-xs font-semibold text-slate-700">Click to upload a .csv file</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">Supports First Name, Last Name, Email, Company, Role, Hook</p>
                 <input
                   ref={csvFileInputRef}
                   type="file"
-                  accept=".csv,text/csv"
+                  accept=".csv"
                   className="hidden"
-                  onChange={handleCSVFileChange}
+                  onChange={handleCsvFileUpload}
                 />
               </div>
 
               <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">Or Paste CSV Content</label>
                 <textarea
-                  rows={8}
+                  rows={6}
                   value={csvInput}
                   onChange={e => setCsvInput(e.target.value)}
-                  placeholder={`Name, Company, Email, X Handle, Role, Custom Hook\nJerry, Lemma AI, jerry@uselemma.ai, @jerry_lemma, Founder, your production agent framework\nDavid, Xpander AI, david@xpander.ai, @david_xpander, CEO, reliable agent infrastructure`}
-                  className="w-full px-3 py-2 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900 font-mono leading-relaxed"
+                  placeholder="First Name,Last Name,Email,Company,Role,Custom Hook&#10;John,Doe,john@example.com,Acme,CTO,scaling LLM pipelines"
+                  className="w-full p-3 text-xs bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 font-mono"
                 />
               </div>
             </div>
 
-            <div className="px-5 py-3 border-t border-gray-200 bg-gray-50 flex justify-end gap-2">
+            <div className="px-6 py-3.5 border-t border-slate-200 bg-slate-50/80 flex items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setIsImportModalOpen(false)}
-                className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition"
+                className="px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition"
               >
                 Cancel
               </button>
               <button
                 type="button"
-                onClick={handleImportCSV}
-                className="px-4 py-1.5 text-xs font-medium text-white bg-gray-900 rounded hover:bg-black transition"
+                onClick={handleImportCsv}
+                disabled={isImporting}
+                className="px-4 py-2 text-xs font-semibold text-white bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 rounded-xl shadow-xs transition disabled:opacity-60"
               >
-                Import Leads
+                {isImporting ? 'Importing...' : 'Start Import'}
               </button>
             </div>
           </div>
         </div>
       )}
 
+      {/* Link Clicks Activity Modal */}
+      {isClicksModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
+          <div className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
+              <div className="flex items-center gap-2">
+                <MousePointerClick className="w-4 h-4 text-sky-600" />
+                <h3 className="font-bold text-sm text-slate-950">
+                  {clicksModalLeadId ? 'Prospect Click Activity' : 'Real-time Link Click Tracking'}
+                </h3>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setIsClicksModalOpen(false)} 
+                className="p-1 text-slate-400 hover:text-slate-700 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1">
+              {isLoadingClicks ? (
+                <div className="text-center py-12 text-slate-400">
+                  <RefreshCw className="w-6 h-6 animate-spin mx-auto text-sky-500 mb-2" />
+                  <span>Loading click activity...</span>
+                </div>
+              ) : clicksData.length === 0 ? (
+                <div className="text-center py-12 text-slate-400 border border-dashed border-slate-200 rounded-xl p-6">
+                  <MousePointerClick className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                  <p className="font-semibold text-slate-700">No link clicks recorded yet</p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    When a prospect opens any link (portfolio, GitHub, demo) in your outreach emails, their click and UTM data will show up right here in real time.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {clicksData.map(c => (
+                    <div key={c.id} className="p-3.5 rounded-xl border border-slate-200 bg-white hover:border-sky-300 transition text-xs space-y-1.5 shadow-2xs">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-slate-900">{c.lead_name || 'Prospect'} ({c.lead_company || 'Company'})</span>
+                        <span className="text-[10px] text-slate-400 font-mono">{c.clicked_at ? new Date(c.clicked_at).toLocaleString() : ''}</span>
+                      </div>
+                      <div className="text-sky-600 font-medium truncate">
+                        {c.target_url}
+                      </div>
+                      <div className="flex flex-wrap gap-2 text-[10px] text-slate-400 font-mono pt-1">
+                        <span>source: {c.utm_source || 'outreach'}</span>
+                        <span>&bull;</span>
+                        <span>campaign: {c.utm_campaign || 'outreach'}</span>
+                        <span>&bull;</span>
+                        <span>content: {c.utm_content || 'prospect'}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-3 border-t border-slate-200 bg-slate-50/80 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsClicksModalOpen(false)}
+                className="px-4 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
