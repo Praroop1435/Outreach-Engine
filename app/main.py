@@ -7,7 +7,7 @@ import asyncio
 from sqlmodel import Session
 from app.db import init_db, engine
 from app.services.mailbox_sync import sync_mailbox
-from app.routers import leads, templates, sync, analytics, twitter, resume, tracking, linkedin
+from app.routers import leads, templates, sync, analytics, resume, tracking
 
 async def background_mailbox_sync_loop():
     """Runs automatic background IMAP sync every 5 minutes to detect replies & bounces."""
@@ -50,8 +50,6 @@ app.include_router(leads.router)
 app.include_router(templates.router)
 app.include_router(sync.router)
 app.include_router(analytics.router)
-app.include_router(twitter.router)
-app.include_router(linkedin.router)
 app.include_router(resume.router)
 app.include_router(tracking.router)
 

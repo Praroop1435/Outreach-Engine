@@ -5,14 +5,23 @@ from app.models import EmailTemplate
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
 
+# Normalize postgres URL for SQLAlchemy compatibility (e.g. from Neon or Render)
+raw_db_url = settings.DATABASE_URL
+if raw_db_url.startswith("postgres://"):
+    raw_db_url = raw_db_url.replace("postgres://", "postgresql://", 1)
+
+is_sqlite = "sqlite" in raw_db_url
+
 engine = create_engine(
-    settings.DATABASE_URL,
-    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {}
+    raw_db_url,
+    connect_args={"check_same_thread": False} if is_sqlite else {},
+    pool_pre_ping=True,
+    pool_recycle=300 if not is_sqlite else -1
 )
 
 @event.listens_for(Engine, "connect")
 def set_sqlite_pragma(dbapi_connection, connection_record):
-    if "sqlite" in settings.DATABASE_URL:
+    if is_sqlite:
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA synchronous=NORMAL")
@@ -30,8 +39,83 @@ def init_db():
 
         curated_templates = [
             EmailTemplate(
+                name="Grounded Founder / AI Startup Pitch (Legit & Proof-First)",
+                subject_template="Engineering & AI systems for {{company}}: Praroop Anand",
+                body_template="""Hi {{firstName}},
+
+I came across {{company}} and spent some time looking into {{custom_hook}}.
+
+I am a full-stack engineer and AI automation developer (FastAPI, Next.js/TypeScript, PostgreSQL, Redis, Docker). Right now at Relu Consultancy, I build and maintain production AI workflows and backend systems for real client workloads, from RAG search engines and webhook integrations to automated agent pipelines.
+
+A couple of production systems I have built:
+
+• AI Social Automate (https://aisocialautomate.com/): Autonomous content engine with automated media pipelines and scheduled async task queues (Celery/Redis).
+• InsightFlow AI (https://portal.e360insurance.com/): Production insurance intelligence platform with FastAPI, pgvector semantic retrieval (92% RAGAS benchmark), and Claude-powered assistant modules.
+
+I focus on clean architecture, resilient async backends, and shipping code that holds up in production.
+
+You can check out my work here:
+• Portfolio: https://praroop.site
+• GitHub: https://github.com/Praroop1435
+
+I have attached my resume (Praroop_Anand.pdf) for quick reference. If you have an open problem, an integration, or an automation pipeline on your roadmap, I would be glad to build a small working prototype or take a quick trial task to prove my approach.
+
+Best regards,
+Praroop""",
+                category="Cold Outreach"
+            ),
+            EmailTemplate(
+                name="Production Engineering Application (Direct & Legitimate)",
+                subject_template="{{role}} application: Praroop Anand",
+                body_template="""Hi {{firstName}},
+
+I am writing to express my strong interest in full-stack engineering and AI automation opportunities at {{company}}.
+
+I am an engineer with hands-on production experience across Python (FastAPI, Django), Next.js/TypeScript, PostgreSQL, Redis, and Docker. At Relu Consultancy, I actively develop client-facing AI workflows, RAG search engines, and backend automation pipelines in production.
+
+Key projects highlighting my background:
+
+• AI Social Automate (https://aisocialautomate.com/): Autonomous content engine featuring scheduled async queue pipelines, multi-platform publishing, and payment webhooks.
+• InsightFlow AI (https://portal.e360insurance.com/): Enterprise intelligence platform with FastAPI, pgvector semantic search (40% latency reduction), and LLM agent modules.
+
+I focus on clean architecture, intuitive UI, and resilient backend systems. You can view more of my work at:
+• Portfolio: https://praroop.site
+• GitHub: https://github.com/Praroop1435
+
+My resume (Praroop_Anand.pdf) is attached for your review. I would welcome the opportunity to discuss how my skill set can support {{company}}'s engineering goals, and I am happy to complete a technical assessment or build a prototype feature.
+
+Thank you for your time and consideration.
+
+Best regards,
+Praroop Anand
++91-8210118421
+anandpraroop@gmail.com""",
+                category="Cold Outreach"
+            ),
+            EmailTemplate(
+                name="Concise Cold DM / Quick Pitch (Founder & Social)",
+                subject_template="Engineering & AI systems at {{company}}",
+                body_template="""Hi {{firstName}},
+
+Saw what you are building at {{company}} regarding {{custom_hook}}.
+
+I'm a full-stack engineer & AI automation developer (FastAPI, Next.js, Redis, pgvector). At Relu Consultancy, I build production AI workflows and backend pipelines for real client workloads.
+
+A couple of systems I shipped:
+• AI Social Automate: https://aisocialautomate.com/ (async media & publishing engine)
+• InsightFlow AI: https://portal.e360insurance.com/ (FastAPI + pgvector insurance SaaS)
+
+Portfolio: https://praroop.site | GitHub: https://github.com/Praroop1435
+
+Resume attached. If you have an active backlog feature or automation pipeline, I'd be glad to build a quick proof-of-concept to show how I work.
+
+Best,
+Praroop""",
+                category="Cold Outreach"
+            ),
+            EmailTemplate(
                 name="Campus / Branch Bypass & Direct Application (Detailed)",
-                subject_template="{{role}} application — Praroop Anand",
+                subject_template="{{role}} application: Praroop Anand",
                 body_template="""Hi {{firstName}},
 
 Your company recently visited my college for hiring, but the role was open only to CS students and I am from a non-CS branch, so I could not apply through the campus process. I am writing directly because I was genuinely interested in the role and wanted to put my work in front of you.
@@ -52,34 +136,6 @@ I have attached my resume (Praroop_Anand.pdf). If it would help, I am happy to b
 
 Looking forward to hearing from you.
 
-Best regards,
-Praroop""",
-                category="Cold Outreach"
-            ),
-            EmailTemplate(
-                name="Role Application & Project Showcase (Primary)",
-                subject_template="{{role}} application — Praroop Anand",
-                body_template="""Hi {{firstName}},
-
-I came across {{company}}'s recruitment post and wanted to reach out regarding the {{role}} role.
-
-I'm a full-stack engineer with strong experience building user-centric web applications and production AI systems. Recently,
-
-I built AI Social Automate (https://aisocialautomate.com/), an autonomous multi-platform content engine with automated media generation and scheduled publishing pipelines.
-
-I'm also building InsightFlow AI (https://portal.e360insurance.com/), an enterprise intelligence platform with robust FastAPI, PostgreSQL, Redis, and LLM agent pipelines operating in production.
-
-I place a strong emphasis on clean architecture, intuitive UI, and reliable systems when building products.
-
-You can find my work here:
-• Portfolio: https://praroop.site
-• GitHub: https://github.com/Praroop1435
-
-I've attached my resume (Praroop_Anand.pdf) for your reference.
-
-I'd be happy to share something more tailored or even build a small feature to demonstrate my approach if that would be helpful.
-
-Looking forward to hearing from you.
 Best regards,
 Praroop""",
                 category="Cold Outreach"

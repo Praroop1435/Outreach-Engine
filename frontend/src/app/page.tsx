@@ -21,8 +21,6 @@ import {
   ExternalLink,
   MousePointerClick,
   Activity,
-  Key,
-  ShieldCheck,
   Globe
 } from 'lucide-react';
 
@@ -101,28 +99,6 @@ interface Analytics {
   reply_rate: number;
 }
 
-interface XStatus {
-  connected: boolean;
-  username: string | null;
-  name: string | null;
-  browser_automation?: {
-    has_session: boolean;
-    cookies_count?: number;
-    updated_at?: string | null;
-    details?: string;
-  };
-}
-
-interface LinkedInStatus {
-  connected: boolean;
-  browser_automation?: {
-    has_session: boolean;
-    cookies_count?: number;
-    updated_at?: string | null;
-    details?: string;
-  };
-}
-
 interface ResumeStatus {
   exists: boolean;
   filename: string;
@@ -145,8 +121,6 @@ export default function OutreachEngineDashboard() {
     total_link_clicks: 0,
     reply_rate: 0
   });
-  const [xStatus, setXStatus] = useState<XStatus>({ connected: false, username: null, name: null });
-  const [linkedinStatus, setLinkedinStatus] = useState<LinkedInStatus>({ connected: false });
   const [resumeStatus, setResumeStatus] = useState<ResumeStatus>({
     exists: false,
     filename: 'Praroop_Anand.pdf',
@@ -164,8 +138,6 @@ export default function OutreachEngineDashboard() {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isComposeModalOpen, setIsComposeModalOpen] = useState(false);
   const [isTemplateBuilderOpen, setIsTemplateBuilderOpen] = useState(false);
-  const [isXCookieModalOpen, setIsXCookieModalOpen] = useState(false);
-  const [isLinkedInCookieModalOpen, setIsLinkedInCookieModalOpen] = useState(false);
   
   // Link Clicks Pop-up Modal state
   const [isClicksModalOpen, setIsClicksModalOpen] = useState(false);
@@ -173,21 +145,8 @@ export default function OutreachEngineDashboard() {
   const [clicksData, setClicksData] = useState<LinkClick[]>([]);
   const [isLoadingClicks, setIsLoadingClicks] = useState(false);
 
-  // X Cookie State
-  const [authTokenInput, setAuthTokenInput] = useState('');
-  const [ct0Input, setCt0Input] = useState('');
-  const [isSavingCookies, setIsSavingCookies] = useState(false);
-
-  // LinkedIn Cookie State
-  const [liAtInput, setLiAtInput] = useState('');
-  const [jsessionidInput, setJsessionidInput] = useState('');
-  const [isSavingLinkedInCookies, setIsSavingLinkedInCookies] = useState(false);
-
   // Compose state
   const [composeLead, setComposeLead] = useState<Lead | null>(null);
-  const [composeChannel, setComposeChannel] = useState<'EMAIL' | 'X_DM' | 'LINKEDIN_CONNECT' | 'LINKEDIN_DM'>('EMAIL');
-  const [composeXHandle, setComposeXHandle] = useState('');
-  const [composeLinkedInUrl, setComposeLinkedInUrl] = useState('');
   const [composeTemplateId, setComposeTemplateId] = useState<string>('');
   const [composeSubject, setComposeSubject] = useState('');
   const [composeBody, setComposeBody] = useState('');
@@ -240,20 +199,16 @@ export default function OutreachEngineDashboard() {
   // Fetch all live data
   const fetchData = useCallback(async () => {
     try {
-      const [leadsRes, analyticsRes, templatesRes, xRes, linkedinRes, resumeRes] = await Promise.all([
+      const [leadsRes, analyticsRes, templatesRes, resumeRes] = await Promise.all([
         fetch(`/api/leads?status=${statusFilter}${searchQuery ? `&search=${encodeURIComponent(searchQuery)}` : ''}`),
         fetch('/api/analytics/overview'),
         fetch('/api/templates'),
-        fetch('/api/auth/x/status'),
-        fetch('/api/auth/linkedin/status'),
         fetch('/api/resume/status')
       ]);
 
       if (leadsRes.ok) setLeads(await leadsRes.json());
       if (analyticsRes.ok) setAnalytics(await analyticsRes.json());
       if (templatesRes.ok) setTemplates(await templatesRes.json());
-      if (xRes.ok) setXStatus(await xRes.json());
-      if (linkedinRes.ok) setLinkedinStatus(await linkedinRes.json());
       if (resumeRes.ok) setResumeStatus(await resumeRes.json());
     } catch (err) {
       console.error('Error fetching data:', err);
@@ -295,64 +250,6 @@ export default function OutreachEngineDashboard() {
     }
   };
 
-  // Save X Cookies for Playwright Browser Automation
-  const handleSaveXCookies = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!authTokenInput.trim() || !ct0Input.trim()) {
-      showToast('Both auth_token and ct0 cookies are required', 'error');
-      return;
-    }
-
-    setIsSavingCookies(true);
-    try {
-      const res = await fetch('/api/auth/x/save-cookies', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ auth_token: authTokenInput, ct0: ct0Input })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Failed to save cookies');
-      showToast('X Browser Automation session active!');
-      setIsXCookieModalOpen(false);
-      setAuthTokenInput('');
-      setCt0Input('');
-      fetchData();
-    } catch (err: any) {
-      showToast(err.message, 'error');
-    } finally {
-      setIsSavingCookies(false);
-    }
-  };
-
-  // Save LinkedIn Cookies for Playwright Browser Automation
-  const handleSaveLinkedInCookies = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!liAtInput.trim()) {
-      showToast('li_at cookie is required', 'error');
-      return;
-    }
-
-    setIsSavingLinkedInCookies(true);
-    try {
-      const res = await fetch('/api/auth/linkedin/save-cookies', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ li_at: liAtInput, jsessionid: jsessionidInput })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Failed to save LinkedIn cookies');
-      showToast('LinkedIn Browser Automation session active!');
-      setIsLinkedInCookieModalOpen(false);
-      setLiAtInput('');
-      setJsessionidInput('');
-      fetchData();
-    } catch (err: any) {
-      showToast(err.message, 'error');
-    } finally {
-      setIsSavingLinkedInCookies(false);
-    }
-  };
-
   // Open Clicks Pop-up Modal
   const openClicksModal = async (leadId: number | null = null) => {
     setClicksModalLeadId(leadId);
@@ -386,9 +283,6 @@ export default function OutreachEngineDashboard() {
   // Compose Handlers
   const openCompose = (lead: Lead) => {
     setComposeLead(lead);
-    setComposeXHandle(lead.x_handle || '');
-    setComposeLinkedInUrl(lead.linkedin_url || '');
-    setComposeChannel('EMAIL');
     setAttachResume(true);
     setEnableUTMTracking(true);
     setComposeTemplateId(templates.length > 0 ? String(templates[0].id) : '');
@@ -432,77 +326,26 @@ export default function OutreachEngineDashboard() {
       return;
     }
 
+    if (!composeSubject.trim()) {
+      showToast('Please provide an email subject', 'error');
+      return;
+    }
+
     setIsSending(true);
     try {
-      if (composeChannel === 'EMAIL') {
-        if (!composeSubject.trim()) {
-          showToast('Please provide an email subject', 'error');
-          setIsSending(false);
-          return;
-        }
-
-        const res = await fetch(`/api/leads/${composeLead.id}/send`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            subject: composeSubject, 
-            body: composeBody,
-            attach_resume: attachResume,
-            enable_utm_tracking: enableUTMTracking
-          })
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Email failed to send');
-        showToast(`Email sent with UTM tracking & ${attachResume ? 'Praroop_Anand.pdf' : 'no attachment'}`);
-      } else if (composeChannel === 'X_DM') {
-        // X DM via Playwright Browser Automation
-        if (!composeXHandle.trim()) {
-          showToast('Please provide a valid X handle', 'error');
-          setIsSending(false);
-          return;
-        }
-
-        const res = await fetch(`/api/auth/x/leads/${composeLead.id}/send-dm`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: composeBody, x_handle: composeXHandle })
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'X DM failed to send');
-        showToast(data.message || `X DM sent to ${composeXHandle}`);
-      } else if (composeChannel === 'LINKEDIN_CONNECT') {
-        // LinkedIn Connection Request via Browser Automation
-        if (!composeLinkedInUrl.trim()) {
-          showToast('Please provide a valid LinkedIn profile URL', 'error');
-          setIsSending(false);
-          return;
-        }
-
-        const res = await fetch(`/api/auth/linkedin/leads/${composeLead.id}/connect`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ note: composeBody, linkedin_url: composeLinkedInUrl })
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'LinkedIn connection request failed');
-        showToast(data.message || 'LinkedIn connection request sent');
-      } else if (composeChannel === 'LINKEDIN_DM') {
-        // LinkedIn Direct Message via Browser Automation
-        if (!composeLinkedInUrl.trim()) {
-          showToast('Please provide a valid LinkedIn profile URL', 'error');
-          setIsSending(false);
-          return;
-        }
-
-        const res = await fetch(`/api/auth/linkedin/leads/${composeLead.id}/send-message`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: composeBody, linkedin_url: composeLinkedInUrl })
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'LinkedIn message failed');
-        showToast(data.message || 'LinkedIn message sent');
-      }
+      const res = await fetch(`/api/leads/${composeLead.id}/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          subject: composeSubject, 
+          body: composeBody,
+          attach_resume: attachResume,
+          enable_utm_tracking: enableUTMTracking
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Email failed to send');
+      showToast(`Email sent with UTM tracking & ${attachResume ? 'Praroop_Anand.pdf' : 'no attachment'}`);
 
       setIsComposeModalOpen(false);
       if (activeDrawerLead && activeDrawerLead.id === composeLead.id) {
@@ -533,7 +376,7 @@ export default function OutreachEngineDashboard() {
         id: 0,
         name: '',
         category: 'Cold Outreach',
-        subject_template: '{{role}} application — Praroop Anand',
+        subject_template: '{{role}} application: Praroop Anand',
         body_template: 'Hi {{firstName}},\n\nI came across {{company}}\'s recruitment post and wanted to reach out regarding the {{role}} role.\n\nI\'m a full-stack engineer with strong experience building user-centric web applications and production AI systems. Recently,\n\nI built AI Social Automate (https://aisocialautomate.com/), an autonomous multi-platform content engine with automated media generation and scheduled publishing pipelines.\n\nI\'m also building InsightFlow AI (https://portal.e360insurance.com/), an enterprise intelligence platform with robust FastAPI, PostgreSQL, Redis, and LLM agent pipelines operating in production.\n\nI place a strong emphasis on clean architecture, intuitive UI, and reliable systems when building products.\n\nYou can find my work here:\n• Portfolio: https://praroop.site\n• GitHub: https://github.com/Praroop1435\n\nI\'ve attached my resume (Praroop_Anand.pdf) for your reference.\n\nI\'d be happy to share something more tailored or even build a small feature to demonstrate my approach if that would be helpful.\n\nLooking forward to hearing from you.\nBest regards,\nPraroop'
       });
     }
@@ -736,9 +579,6 @@ export default function OutreachEngineDashboard() {
     }
   };
 
-  const hasBrowserSession = xStatus.browser_automation?.has_session;
-  const hasLinkedInBrowserSession = Boolean(linkedinStatus.browser_automation?.has_session || linkedinStatus.connected);
-
   return (
     <div className="min-h-screen bg-white text-gray-900 font-sans">
       {/* Toast Notification */}
@@ -785,46 +625,6 @@ export default function OutreachEngineDashboard() {
                 onChange={handleResumeUpload}
               />
             </div>
-
-            {/* X Browser Automation Pill */}
-            <button
-              onClick={() => setIsXCookieModalOpen(true)}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded border text-xs transition ${
-                hasBrowserSession
-                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
-                  : 'bg-gray-50 text-gray-700 border-gray-300 hover:bg-gray-100'
-              }`}
-              title="Configure X Browser Automation Cookies"
-            >
-              {hasBrowserSession ? (
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-              ) : (
-                <Key className="w-3.5 h-3.5 text-gray-500" />
-              )}
-              <span className="font-medium">
-                {hasBrowserSession ? 'X Browser: Active' : 'Setup X Cookies'}
-              </span>
-            </button>
-
-            {/* LinkedIn Browser Automation Pill */}
-            <button
-              onClick={() => setIsLinkedInCookieModalOpen(true)}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded border text-xs transition ${
-                hasLinkedInBrowserSession
-                  ? 'bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100'
-                  : 'bg-gray-50 text-gray-700 border-gray-300 hover:bg-gray-100'
-              }`}
-              title="Configure LinkedIn Browser Automation Cookies (li_at)"
-            >
-              {hasLinkedInBrowserSession ? (
-                <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
-              ) : (
-                <Key className="w-3.5 h-3.5 text-gray-500" />
-              )}
-              <span className="font-medium">
-                {hasLinkedInBrowserSession ? 'LinkedIn: Active' : 'Setup LinkedIn Cookies'}
-              </span>
-            </button>
           </div>
 
           <div className="flex items-center gap-2">
@@ -1030,156 +830,7 @@ export default function OutreachEngineDashboard() {
 
       </div>
 
-      {/* X Cookie / Playwright Automation Modal */}
-      {isXCookieModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-          <div className="bg-white rounded-lg border border-gray-200 max-w-lg w-full shadow-xl overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Key className="w-4 h-4 text-gray-900" />
-                <h3 className="text-sm font-semibold text-gray-950">X (Twitter) Browser Automation Setup</h3>
-              </div>
-              <button onClick={() => setIsXCookieModalOpen(false)} className="p-1 text-gray-400 hover:text-gray-700">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
 
-            <form onSubmit={handleSaveXCookies}>
-              <div className="p-5 space-y-4 text-xs">
-                <div className="bg-gray-50 p-3.5 rounded border border-gray-200 text-gray-600 space-y-1.5 leading-relaxed">
-                  <p className="font-semibold text-gray-900">How to get your X cookies (100% Free, no $100 API plan needed):</p>
-                  <ol className="list-decimal pl-4 space-y-1 text-[11px]">
-                    <li>Open <strong>x.com</strong> in your browser (logged in).</li>
-                    <li>Press <code className="bg-gray-200 px-1 py-0.5 rounded font-mono">F12</code> or right-click &rarr; <em>Inspect</em>.</li>
-                    <li>Click the <strong>Application</strong> (or <em>Storage</em>) tab &rarr; <strong>Cookies</strong> &rarr; <code className="bg-gray-200 px-1 py-0.5 rounded font-mono">https://x.com</code>.</li>
-                    <li>Copy the values for <strong>auth_token</strong> and <strong>ct0</strong>.</li>
-                  </ol>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
-                    auth_token Cookie *
-                  </label>
-                  <input
-                    type="password"
-                    required
-                    placeholder="e.g. 7f8a9b2c3d4e5f6..."
-                    value={authTokenInput}
-                    onChange={e => setAuthTokenInput(e.target.value)}
-                    className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900 font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
-                    ct0 (CSRF Token) Cookie *
-                  </label>
-                  <input
-                    type="password"
-                    required
-                    placeholder="e.g. 1a2b3c4d5e6f7a8b9..."
-                    value={ct0Input}
-                    onChange={e => setCt0Input(e.target.value)}
-                    className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900 font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="px-5 py-3 border-t border-gray-200 bg-gray-50 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsXCookieModalOpen(false)}
-                  className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSavingCookies}
-                  className="px-4 py-1.5 text-xs font-medium text-white bg-gray-900 rounded hover:bg-black disabled:opacity-60 transition"
-                >
-                  {isSavingCookies ? 'Saving Session...' : 'Save & Activate Automation'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* LinkedIn Cookie / Playwright Automation Modal */}
-      {isLinkedInCookieModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-          <div className="bg-white rounded-lg border border-gray-200 max-w-lg w-full shadow-xl overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Key className="w-4 h-4 text-blue-600" />
-                <h3 className="text-sm font-semibold text-gray-950">LinkedIn Browser Automation Setup</h3>
-              </div>
-              <button onClick={() => setIsLinkedInCookieModalOpen(false)} className="p-1 text-gray-400 hover:text-gray-700">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveLinkedInCookies}>
-              <div className="p-5 space-y-4 text-xs">
-                <div className="bg-blue-50/70 p-3.5 rounded border border-blue-200 text-gray-700 space-y-1.5 leading-relaxed">
-                  <p className="font-semibold text-blue-950">How to get your LinkedIn cookies for automated connection notes & DMs:</p>
-                  <ol className="list-decimal pl-4 space-y-1 text-[11px] text-gray-700">
-                    <li>Open <strong>linkedin.com</strong> in your browser (logged in).</li>
-                    <li>Press <code className="bg-white px-1 py-0.5 rounded font-mono border border-blue-200">F12</code> or right-click &rarr; <em>Inspect</em>.</li>
-                    <li>Click the <strong>Application</strong> (or <em>Storage</em>) tab &rarr; <strong>Cookies</strong> &rarr; <code className="bg-white px-1 py-0.5 rounded font-mono border border-blue-200">https://www.linkedin.com</code>.</li>
-                    <li>Copy the value for the <strong>li_at</strong> cookie.</li>
-                  </ol>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
-                    li_at Session Cookie *
-                  </label>
-                  <input
-                    type="password"
-                    required
-                    placeholder="AQEDAR..."
-                    value={liAtInput}
-                    onChange={e => setLiAtInput(e.target.value)}
-                    className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900 font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
-                    JSESSIONID Cookie (Optional)
-                  </label>
-                  <input
-                    type="password"
-                    placeholder='e.g. "ajax:12345..."'
-                    value={jsessionidInput}
-                    onChange={e => setJsessionidInput(e.target.value)}
-                    className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900 font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="px-5 py-3 border-t border-gray-200 bg-gray-50 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsLinkedInCookieModalOpen(false)}
-                  className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSavingLinkedInCookies}
-                  className="px-4 py-1.5 text-xs font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-60 transition"
-                >
-                  {isSavingLinkedInCookies ? 'Saving Session...' : 'Save & Activate LinkedIn'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* Link Clicks Pop-up Modal */}
       {isClicksModalOpen && (
@@ -1420,70 +1071,22 @@ export default function OutreachEngineDashboard() {
         </div>
       )}
 
-      {/* Multi-Channel Compose Modal */}
+      {/* Compose Email Modal */}
       {isComposeModalOpen && composeLead && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
           <div className="bg-white rounded-lg border border-gray-200 max-w-xl w-full shadow-xl overflow-hidden">
             <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-950">Send Outreach</h3>
+              <h3 className="text-sm font-semibold text-gray-950">Send Email Outreach</h3>
               <button onClick={() => setIsComposeModalOpen(false)} className="p-1 text-gray-400 hover:text-gray-700">
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             <div className="p-5 space-y-4">
-              {/* Channel Selector */}
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setComposeChannel('EMAIL')}
-                  className={`px-3 py-1.5 rounded text-xs font-medium border transition ${
-                    composeChannel === 'EMAIL'
-                      ? 'bg-gray-900 text-white border-gray-900'
-                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                  }`}
-                >
-                  Email (Gmail)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setComposeChannel('X_DM')}
-                  className={`px-3 py-1.5 rounded text-xs font-medium border transition ${
-                    composeChannel === 'X_DM'
-                      ? 'bg-gray-900 text-white border-gray-900'
-                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                  }`}
-                >
-                  X Direct Message
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setComposeChannel('LINKEDIN_CONNECT')}
-                  className={`px-3 py-1.5 rounded text-xs font-medium border transition ${
-                    composeChannel === 'LINKEDIN_CONNECT'
-                      ? 'bg-blue-600 text-white border-blue-600'
-                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                  }`}
-                >
-                  LinkedIn Connection Note
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setComposeChannel('LINKEDIN_DM')}
-                  className={`px-3 py-1.5 rounded text-xs font-medium border transition ${
-                    composeChannel === 'LINKEDIN_DM'
-                      ? 'bg-blue-600 text-white border-blue-600'
-                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                  }`}
-                >
-                  LinkedIn Direct Message
-                </button>
-              </div>
-
               {/* Recipient info */}
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">
-                  {composeChannel === 'EMAIL' ? 'Recipient Email' : 'Email on File'}
+                  Recipient Email
                 </label>
                 <input
                   type="text"
@@ -1493,46 +1096,6 @@ export default function OutreachEngineDashboard() {
                 />
               </div>
 
-              {composeChannel === 'X_DM' && (
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
-                    Target X Handle (Username without @ or URL)
-                  </label>
-                  <input
-                    type="text"
-                    value={composeXHandle}
-                    onChange={e => setComposeXHandle(e.target.value)}
-                    placeholder="e.g. jerry_ai"
-                    className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900 font-mono"
-                  />
-                  {!hasBrowserSession && (
-                    <p className="text-[11px] text-amber-700 mt-1 flex items-center gap-1">
-                      <span>No browser session. Click <strong>"Setup X Cookies"</strong> in the header to enable free automated sending.</span>
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {(composeChannel === 'LINKEDIN_CONNECT' || composeChannel === 'LINKEDIN_DM') && (
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
-                    Target LinkedIn Profile URL
-                  </label>
-                  <input
-                    type="text"
-                    value={composeLinkedInUrl}
-                    onChange={e => setComposeLinkedInUrl(e.target.value)}
-                    placeholder="e.g. https://www.linkedin.com/in/username"
-                    className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900 font-mono"
-                  />
-                  {!hasLinkedInBrowserSession && (
-                    <p className="text-[11px] text-amber-700 mt-1 flex items-center gap-1">
-                      <span>No LinkedIn session. Click <strong>"Setup LinkedIn Cookies"</strong> in the header to enable automated sending.</span>
-                    </p>
-                  )}
-                </div>
-              )}
-
               {/* Template selector */}
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Choose Template</label>
@@ -1541,7 +1104,7 @@ export default function OutreachEngineDashboard() {
                   onChange={handleTemplateChange}
                   className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900"
                 >
-                  <option value="">-- Custom Outreach --</option>
+                  <option value="">Custom Outreach</option>
                   {templates.map(t => (
                     <option key={t.id} value={t.id}>
                       {t.name} ({t.category})
@@ -1550,118 +1113,88 @@ export default function OutreachEngineDashboard() {
                 </select>
               </div>
 
-              {composeChannel === 'EMAIL' && (
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="block text-xs font-medium text-gray-700">Subject</label>
-                    <span className="text-[10px] text-gray-400">Click preset to apply:</span>
-                  </div>
-                  <input
-                    type="text"
-                    value={composeSubject}
-                    onChange={e => setComposeSubject(e.target.value)}
-                    placeholder="Email subject..."
-                    className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900 font-sans"
-                  />
-                  <div className="flex flex-wrap gap-1 mt-1.5">
-                    {[
-                      '{{role}} application — Praroop Anand',
-                      'Praroop / {{role}} at {{company}}',
-                      '{{company}} campus visit / {{role}} application',
-                      'Engineering & AI systems for {{company}}',
-                      'Quick note on {{custom_hook}} (Praroop)'
-                    ].map(preset => {
-                      const rendered = preset
-                        .replace(/\{\{\s*company\s*\}\}/gi, composeLead?.company || 'company')
-                        .replace(/\{\{\s*role\s*\}\}/gi, composeLead?.role || 'role')
-                        .replace(/\{\{\s*custom_hook\s*\}\}/gi, composeLead?.custom_hook || 'engineering');
-                      return (
-                        <button
-                          key={preset}
-                          type="button"
-                          onClick={() => setComposeSubject(rendered)}
-                          className="px-2 py-0.5 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded border border-gray-200 text-[10px] truncate max-w-[260px] transition"
-                          title={`Use subject: ${rendered}`}
-                        >
-                          {rendered}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="block text-xs font-medium text-gray-700">
-                    {composeChannel === 'EMAIL'
-                      ? 'Message Body'
-                      : composeChannel === 'X_DM'
-                      ? 'Direct Message Pitch'
-                      : composeChannel === 'LINKEDIN_CONNECT'
-                      ? 'LinkedIn Connection Request Note (<300 chars)'
-                      : 'LinkedIn Direct Message'}
-                  </label>
-                  {composeChannel === 'LINKEDIN_CONNECT' && (
-                    <span
-                      className={`text-[11px] font-mono ${
-                        composeBody.length > 300 ? 'text-red-600 font-bold' : 'text-gray-500'
-                      }`}
-                    >
-                      {composeBody.length} / 300 chars
-                    </span>
-                  )}
+                  <label className="block text-xs font-medium text-gray-700">Subject</label>
+                  <span className="text-[10px] text-gray-400">Click preset to apply:</span>
                 </div>
+                <input
+                  type="text"
+                  value={composeSubject}
+                  onChange={e => setComposeSubject(e.target.value)}
+                  placeholder="Email subject..."
+                  className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900 font-sans"
+                />
+                <div className="flex flex-wrap gap-1 mt-1.5">
+                  {[
+                    '{{role}} application: Praroop Anand',
+                    'Praroop / {{role}} at {{company}}',
+                    '{{company}} campus visit / {{role}} application',
+                    'Engineering & AI systems for {{company}}',
+                    'Quick note on {{custom_hook}} (Praroop)'
+                  ].map(preset => {
+                    const rendered = preset
+                      .replace(/\{\{\s*company\s*\}\}/gi, composeLead?.company || 'company')
+                      .replace(/\{\{\s*role\s*\}\}/gi, composeLead?.role || 'role')
+                      .replace(/\{\{\s*custom_hook\s*\}\}/gi, composeLead?.custom_hook || 'engineering');
+                    return (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setComposeSubject(rendered)}
+                        className="px-2 py-0.5 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded border border-gray-200 text-[10px] truncate max-w-[260px] transition"
+                        title={`Use subject: ${rendered}`}
+                      >
+                        {rendered}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Message Body
+                </label>
                 <textarea
-                  rows={composeChannel === 'LINKEDIN_CONNECT' ? 4 : 7}
+                  rows={8}
                   value={composeBody}
                   onChange={e => setComposeBody(e.target.value)}
-                  placeholder={
-                    composeChannel === 'LINKEDIN_CONNECT'
-                      ? 'Hi Firstname, love what you are building...'
-                      : 'Write your outreach message...'
-                  }
+                  placeholder="Write your outreach message..."
                   className="w-full px-3 py-2 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900 leading-relaxed font-sans"
                 />
-                {composeChannel === 'LINKEDIN_CONNECT' && composeBody.length > 300 && (
-                  <p className="text-[11px] text-red-600 mt-1 font-medium">
-                    ⚠️ LinkedIn allows a maximum of 300 characters for connection request notes. Please shorten your note.
-                  </p>
-                )}
               </div>
 
               {/* Options */}
-              {composeChannel === 'EMAIL' && (
-                <div className="space-y-2 pt-1">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="attach-resume-check"
-                      checked={attachResume}
-                      onChange={e => setAttachResume(e.target.checked)}
-                      className="rounded border-gray-300 text-gray-900 focus:ring-0 w-3.5 h-3.5"
-                    />
-                    <label htmlFor="attach-resume-check" className="text-xs text-gray-700 font-medium flex items-center gap-1 cursor-pointer">
-                      <Paperclip className="w-3 h-3 text-gray-500" />
-                      <span>Attach Resume (Praroop_Anand.pdf)</span>
-                    </label>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="utm-tracking-check"
-                      checked={enableUTMTracking}
-                      onChange={e => setEnableUTMTracking(e.target.checked)}
-                      className="rounded border-gray-300 text-gray-900 focus:ring-0 w-3.5 h-3.5"
-                    />
-                    <label htmlFor="utm-tracking-check" className="text-xs text-gray-700 font-medium flex items-center gap-1 cursor-pointer">
-                      <Sparkles className="w-3 h-3 text-gray-500" />
-                      <span>Disguise all links with UTM parameters (utm_source=outreach&utm_campaign=...)</span>
-                    </label>
-                  </div>
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="attach-resume-check"
+                    checked={attachResume}
+                    onChange={e => setAttachResume(e.target.checked)}
+                    className="rounded border-gray-300 text-gray-900 focus:ring-0 w-3.5 h-3.5"
+                  />
+                  <label htmlFor="attach-resume-check" className="text-xs text-gray-700 font-medium flex items-center gap-1 cursor-pointer">
+                    <Paperclip className="w-3 h-3 text-gray-500" />
+                    <span>Attach Resume (Praroop_Anand.pdf)</span>
+                  </label>
                 </div>
-              )}
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="utm-tracking-check"
+                    checked={enableUTMTracking}
+                    onChange={e => setEnableUTMTracking(e.target.checked)}
+                    className="rounded border-gray-300 text-gray-900 focus:ring-0 w-3.5 h-3.5"
+                  />
+                  <label htmlFor="utm-tracking-check" className="text-xs text-gray-700 font-medium flex items-center gap-1 cursor-pointer">
+                    <Sparkles className="w-3 h-3 text-gray-500" />
+                    <span>Disguise all links with UTM parameters (utm_source=outreach&utm_campaign=...)</span>
+                  </label>
+                </div>
+              </div>
             </div>
 
             <div className="px-5 py-3 border-t border-gray-200 bg-gray-50 flex justify-end gap-2">
@@ -1674,23 +1207,11 @@ export default function OutreachEngineDashboard() {
               </button>
               <button
                 type="button"
-                disabled={isSending || (composeChannel === 'LINKEDIN_CONNECT' && composeBody.length > 300)}
+                disabled={isSending}
                 onClick={handleSendMessage}
-                className={`px-4 py-1.5 text-xs font-medium text-white rounded disabled:opacity-60 transition ${
-                  composeChannel.startsWith('LINKEDIN')
-                    ? 'bg-blue-600 hover:bg-blue-700'
-                    : 'bg-gray-900 hover:bg-black'
-                }`}
+                className="px-4 py-1.5 text-xs font-medium text-white bg-gray-900 hover:bg-black rounded disabled:opacity-60 transition"
               >
-                {isSending
-                  ? 'Sending...'
-                  : composeChannel === 'EMAIL'
-                  ? 'Send via Gmail'
-                  : composeChannel === 'X_DM'
-                  ? 'Send via X (Browser)'
-                  : composeChannel === 'LINKEDIN_CONNECT'
-                  ? 'Send Connection via Browser'
-                  : 'Send LinkedIn DM via Browser'}
+                {isSending ? 'Sending...' : 'Send via Gmail'}
               </button>
             </div>
           </div>
@@ -1811,12 +1332,12 @@ export default function OutreachEngineDashboard() {
                       type="text"
                       value={templateForm.subject_template}
                       onChange={e => setTemplateForm({ ...templateForm, subject_template: e.target.value })}
-                      placeholder="e.g. {{role}} application — Praroop Anand"
+                      placeholder="e.g. {{role}} application: Praroop Anand"
                       className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-gray-900 font-sans"
                     />
                     <div className="flex flex-wrap gap-1 mt-1.5">
                       {[
-                        '{{role}} application — Praroop Anand',
+                        '{{role}} application: Praroop Anand',
                         'Praroop / {{role}} at {{company}}',
                         '{{company}} campus visit / {{role}} application',
                         'Engineering & AI systems for {{company}}',
