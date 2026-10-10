@@ -633,7 +633,10 @@ export default function OutreachEngineDashboard() {
         {/* Top Header */}
         <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-6 mb-6 border-b border-gray-200 gap-4">
           <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-xl font-semibold tracking-tight text-gray-950">Outreach Engine</h1>
+            <div className="flex items-center gap-2">
+              <img src="/icon.svg" alt="Outreach Engine" className="w-6 h-6 rounded-md shadow-xs" />
+              <h1 className="text-xl font-semibold tracking-tight text-gray-950">Outreach Engine</h1>
+            </div>
             <span className="text-xs text-gray-500 bg-gray-50 px-2.5 py-1 rounded border border-gray-200 font-mono">
               anandpraroop@gmail.com
             </span>

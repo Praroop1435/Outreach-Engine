@@ -13,8 +13,13 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Personal Outreach Engine",
-  description: "High-performance outreach engine with Gmail & X Direct Messages",
+  title: "Outreach Engine | Praroop Anand",
+  description: "High-performance personal outreach and prospect pipeline management engine",
+  icons: {
+    icon: "/icon.svg",
+    shortcut: "/icon.svg",
+    apple: "/icon.svg",
+  },
 };
 
 export default function RootLayout({
