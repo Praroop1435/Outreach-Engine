@@ -3,6 +3,8 @@
 All for One GCP.json
 outreach.db
 *.db
+*.db*
+*.bak
 x_token.json
 .x_oauth_state.json
 node_modules/

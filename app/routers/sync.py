@@ -28,8 +28,10 @@ def get_sync_status():
         "last_error": last_sync_info["last_error"]
     }
 
+@router.get("/cron")
+@router.get("/mailbox")
 @router.post("/mailbox")
-def trigger_mailbox_sync(session: Session = Depends(get_session), limit: int = 150):
+def trigger_mailbox_sync(session: Session = Depends(get_session), limit: int = 100):
     if not settings.GMAIL_APP_PASSWORD:
         raise HTTPException(status_code=400, detail="GMAIL_APP_PASSWORD is not set in .env")
 
