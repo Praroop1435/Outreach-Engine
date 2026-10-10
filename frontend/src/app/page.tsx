@@ -134,11 +134,11 @@ interface ResumeStatus {
 
 const BACKEND_BASE = (process.env.NEXT_PUBLIC_BACKEND_URL || "https://outreach-engine-h5lx.onrender.com").replace(/\/$/, "");
 
-// Resilient API Fetch Helper that works across Vercel and Render
+// Same-Origin API Fetch Helper (Prevents Brave Shield / Safari cross-site CORS blocks)
 async function apiFetch(endpoint: string, options?: RequestInit): Promise<Response> {
   const url = endpoint.startsWith('http')
     ? endpoint
-    : `${BACKEND_BASE}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+    : (endpoint.startsWith('/') ? endpoint : `/${endpoint}`);
   return fetch(url, options);
 }
 
@@ -748,11 +748,8 @@ export default function OutreachEngineDashboard() {
                 className="w-8 h-8 rounded-lg drop-shadow-xs hover:scale-105 transition-transform" 
               />
               <div>
-                <h1 className="text-lg sm:text-xl font-bold tracking-tight text-slate-950 flex items-center gap-2">
-                  <span>outreach engine</span>
-                  <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-sky-50 text-sky-700 border border-sky-200/80">
-                    Neon Postgres
-                  </span>
+                <h1 className="text-lg sm:text-xl font-bold tracking-tight text-slate-950">
+                  outreach engine
                 </h1>
               </div>
             </div>
