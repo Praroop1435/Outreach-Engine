@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { 
   Mail, 
   Send, 
@@ -240,11 +240,11 @@ export default function OutreachEngineDashboard() {
     setTimeout(() => setToastMessage(null), 4000);
   };
 
-  // Fetch all live data
+  // Fetch all live data once on mount, sync, or mutation
   const fetchData = useCallback(async () => {
     try {
       const [leadsRes, analyticsRes, templatesRes, resumeRes, repliesRes] = await Promise.all([
-        apiFetch(`/api/leads?status=${statusFilter}${searchQuery ? `&search=${encodeURIComponent(searchQuery)}` : ''}`),
+        apiFetch('/api/leads?status=ALL&limit=500'),
         apiFetch('/api/analytics/overview'),
         apiFetch('/api/templates'),
         apiFetch('/api/resume/status'),
@@ -261,7 +261,54 @@ export default function OutreachEngineDashboard() {
     } finally {
       setIsLoading(false);
     }
-  }, [statusFilter, searchQuery]);
+  }, []);
+
+  // In-memory instant filtering (0ms latency, zero network round-trip)
+  const filteredLeads = useMemo(() => {
+    return leads.filter(lead => {
+      // 1. Status Filter
+      if (statusFilter !== 'ALL') {
+        const s = (lead.status || '').toUpperCase();
+        if (statusFilter === 'BOUNCED') {
+          if (s !== 'BOUNCED' && s !== 'INVALID_EMAIL') return false;
+        } else if (statusFilter === 'REPLIED') {
+          if (s !== 'REPLIED' && s !== 'INTERESTED') return false;
+        } else if (statusFilter === 'CONTACTED') {
+          if (!['CONTACTED', 'FOLLOWED_UP', 'REPLIED', 'INTERESTED'].includes(s)) return false;
+        } else if (statusFilter === 'FOLLOWED_UP') {
+          if (s !== 'FOLLOWED_UP') return false;
+        } else if (s !== statusFilter) {
+          return false;
+        }
+      }
+
+      // 2. Search Query
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const fullName = `${lead.first_name || ''} ${lead.last_name || ''}`.toLowerCase();
+        const email = (lead.email || '').toLowerCase();
+        const comp = (lead.company || '').toLowerCase();
+        const role = (lead.role || '').toLowerCase();
+        const hook = (lead.custom_hook || '').toLowerCase();
+        const notes = (lead.notes || '').toLowerCase();
+        return fullName.includes(q) || email.includes(q) || comp.includes(q) || role.includes(q) || hook.includes(q) || notes.includes(q);
+      }
+
+      return true;
+    });
+  }, [leads, statusFilter, searchQuery]);
+
+  // Dynamically computed tab counts in 0ms
+  const tabCounts = useMemo(() => {
+    return {
+      all: leads.length,
+      notContacted: leads.filter(l => l.status === 'NOT_CONTACTED').length,
+      contacted: leads.filter(l => ['CONTACTED', 'FOLLOWED_UP', 'REPLIED', 'INTERESTED'].includes(l.status)).length,
+      replied: leads.filter(l => ['REPLIED', 'INTERESTED'].includes(l.status)).length,
+      followedUp: leads.filter(l => l.status === 'FOLLOWED_UP').length,
+      bounced: leads.filter(l => ['BOUNCED', 'INVALID_EMAIL'].includes(l.status)).length
+    };
+  }, [leads]);
 
   const handleManualSyncMailbox = async () => {
     setIsSyncingMailbox(true);
@@ -662,12 +709,12 @@ export default function OutreachEngineDashboard() {
   };
 
   const filterTabs = [
-    { id: 'ALL', label: 'All', count: analytics.total_leads },
-    { id: 'NOT_CONTACTED', label: 'Not Contacted', count: analytics.not_contacted_count },
-    { id: 'CONTACTED', label: 'Contacted', count: analytics.contacted_count },
-    { id: 'REPLIED', label: 'Replied', count: analytics.replied_count },
-    { id: 'FOLLOWED_UP', label: 'Followed Up', count: analytics.follow_up_needed },
-    { id: 'BOUNCED', label: 'Bounced', count: analytics.bounced_count || 0 }
+    { id: 'ALL', label: 'All', count: tabCounts.all },
+    { id: 'NOT_CONTACTED', label: 'Not Contacted', count: tabCounts.notContacted },
+    { id: 'CONTACTED', label: 'Contacted', count: tabCounts.contacted },
+    { id: 'REPLIED', label: 'Replied', count: tabCounts.replied },
+    { id: 'FOLLOWED_UP', label: 'Followed Up', count: tabCounts.followedUp },
+    { id: 'BOUNCED', label: 'Bounced', count: tabCounts.bounced }
   ];
 
   return (
@@ -966,18 +1013,18 @@ export default function OutreachEngineDashboard() {
                       <span>Loading outreach contacts...</span>
                     </td>
                   </tr>
-                ) : leads.length === 0 ? (
+                ) : filteredLeads.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="px-6 py-16 text-center text-slate-400">
                       <Inbox className="w-8 h-8 mx-auto text-slate-300 mb-2" />
                       <p className="font-semibold text-slate-700 text-sm">No contacts found</p>
                       <p className="text-xs text-slate-400 mt-1">
-                        Try adjusting your filters or import your target outreach list.
+                        Try adjusting your filters or search query.
                       </p>
                     </td>
                   </tr>
                 ) : (
-                  leads.map(lead => {
+                  filteredLeads.map(lead => {
                     const fullName = `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || 'No Name';
                     const lastContactedStr = lead.last_contacted_at
                       ? new Date(lead.last_contacted_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
