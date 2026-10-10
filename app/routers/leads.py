@@ -42,18 +42,21 @@ def list_leads(
     query = query.order_by(col(Lead.updated_at).desc()).offset(skip).limit(limit)
     leads = session.exec(query).all()
 
-    # Enrich with message counts
-    results = []
-    for l in leads:
-        msg_count = session.exec(
-            select(func.count(EmailMessage.id)).where(EmailMessage.lead_id == l.id)
-        ).one()
-        read_obj = LeadRead(
-            **l.model_dump(),
-            message_count=msg_count
-        )
-        results.append(read_obj)
-    return results
+    # Enrich with message counts using a single batch query
+    lead_ids = [l.id for l in leads if l.id is not None]
+    msg_counts = {}
+    if lead_ids:
+        counts = session.exec(
+            select(EmailMessage.lead_id, func.count(EmailMessage.id))
+            .where(col(EmailMessage.lead_id).in_(lead_ids))
+            .group_by(EmailMessage.lead_id)
+        ).all()
+        msg_counts = {row[0]: row[1] for row in counts}
+
+    return [
+        LeadRead(**l.model_dump(), message_count=msg_counts.get(l.id, 0))
+        for l in leads
+    ]
 
 @router.post("", response_model=LeadRead)
 def create_lead(lead_in: LeadCreate, session: Session = Depends(get_session)):
