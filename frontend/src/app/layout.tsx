@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Outreach Engine | Praroop Anand",
+  title: "outreach engine",
   description: "High-performance personal outreach and prospect pipeline management engine",
   icons: {
     icon: [
