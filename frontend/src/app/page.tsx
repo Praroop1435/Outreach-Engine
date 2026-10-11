@@ -203,7 +203,7 @@ export default function OutreachEngineDashboard() {
     first_name: '',
     last_name: '',
     email: '',
-    x_handle: '',
+    website_url: '',
     company: '',
     role: '',
     status: 'NOT_CONTACTED',
@@ -578,7 +578,7 @@ export default function OutreachEngineDashboard() {
       first_name: '',
       last_name: '',
       email: '',
-      x_handle: '',
+      website_url: '',
       company: '',
       role: '',
       status: 'NOT_CONTACTED',
@@ -594,7 +594,7 @@ export default function OutreachEngineDashboard() {
       first_name: lead.first_name || '',
       last_name: lead.last_name || '',
       email: lead.email,
-      x_handle: lead.x_handle || '',
+      website_url: lead.website_url || '',
       company: lead.company || '',
       role: lead.role || '',
       status: lead.status || 'NOT_CONTACTED',
@@ -1049,11 +1049,6 @@ export default function OutreachEngineDashboard() {
                           <div className="font-mono text-[11px] text-slate-700">
                             {lead.email}
                           </div>
-                          {lead.x_handle && (
-                            <div className="text-sky-600 font-mono text-[10px] mt-0.5">
-                              X: {lead.x_handle}
-                            </div>
-                          )}
                         </td>
                         <td className="px-4 py-3.5">
                           <span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-semibold border ${getStatusBadge(lead.status)}`}>
@@ -1258,12 +1253,6 @@ export default function OutreachEngineDashboard() {
                     </button>
                   </div>
                 </div>
-                {activeDrawerLead.x_handle && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-500">X Handle:</span>
-                    <span className="font-mono text-sky-600 font-medium">{activeDrawerLead.x_handle}</span>
-                  </div>
-                )}
                 <div className="flex items-center justify-between">
                   <span className="text-slate-500">Status:</span>
                   <span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-semibold border ${getStatusBadge(activeDrawerLead.status)}`}>
@@ -1729,12 +1718,12 @@ export default function OutreachEngineDashboard() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-semibold text-slate-700 block mb-1">X (Twitter) Handle</label>
+                  <label className="text-xs font-semibold text-slate-700 block mb-1">Website URL</label>
                   <input
-                    type="text"
-                    value={leadForm.x_handle}
-                    onChange={e => setLeadForm({ ...leadForm, x_handle: e.target.value })}
-                    placeholder="@handle"
+                    type="url"
+                    value={leadForm.website_url}
+                    onChange={e => setLeadForm({ ...leadForm, website_url: e.target.value })}
+                    placeholder="https://company.com"
                     className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 font-mono"
                   />
                 </div>

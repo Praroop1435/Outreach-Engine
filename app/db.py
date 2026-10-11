@@ -175,16 +175,27 @@ Praroop""",
                 category="Follow-up"
             ),
             EmailTemplate(
-                name="X (Twitter) Direct Message Pitch",
-                subject_template="X DM to @{{x_handle}}",
-                body_template="Hi {{firstName}}, saw what you are building at {{company}}. I'm a full-stack engineer building AI Social Automate (https://aisocialautomate.com/) and InsightFlow AI (https://portal.e360insurance.com/). Portfolio: https://praroop.site | GitHub: https://github.com/Praroop1435. Attached my resume to email, and I'd be happy to build a small feature to demonstrate my approach if helpful!",
-                category="X Direct Message"
-            ),
-            EmailTemplate(
-                name="LinkedIn Connection Note (Personalized)",
-                subject_template="Connect on LinkedIn",
-                body_template="Hi {{firstName}}, saw what you are building at {{company}} regarding {{custom_hook}}. I build production AI backend pipelines & agent systems (FastAPI, Redis, pgvector). Would love to connect and follow your journey!",
-                category="LinkedIn"
+                name="Research & Engineering Pitch (Full Stack AI Engineer)",
+                subject_template="Full Stack AI Engineer: Praroop Anand | {{company}}",
+                body_template="""Hi {{firstName}},
+
+I came across {{company}} recently and spent time researching what you and the team are building around {{custom_hook}}. I am genuinely impressed by your approach and very interested in contributing to {{company}} as a Full Stack AI Engineer.
+
+A bit about my background: I build and deploy production AI systems, backend pipelines, and interactive full-stack applications (FastAPI, Next.js/TypeScript, PostgreSQL, Redis, Docker):
+• AI Social Automate (https://aisocialautomate.com/): Autonomous media generation engine with async task queues, Redis caching, and automated multi-platform publishing.
+• InsightFlow AI (https://portal.e360insurance.com/): Enterprise intelligence platform with FastAPI, pgvector semantic search (92% RAGAS benchmark), and autonomous agent workflows.
+
+Live portfolio & code:
+• Portfolio: https://praroop.site
+• GitHub: https://github.com/Praroop1435
+
+My resume is attached (Praroop_Anand.pdf) for your review. If your engineering team has room for a driven Full Stack AI Engineer, I would love 10 minutes to learn more about your technical roadmap. I am also happy to complete a trial task or build a proof-of-concept prototype to show how I work.
+
+Best regards,
+Praroop Anand
++91-8210118421
+anandpraroop@gmail.com""",
+                category="Cold Outreach"
             )
         ]
         for t in curated_templates:
