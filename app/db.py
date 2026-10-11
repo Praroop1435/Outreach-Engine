@@ -58,7 +58,7 @@ You can check out my work here:
 • Portfolio: https://praroop.site
 • GitHub: https://github.com/Praroop1435
 
-I have attached my resume (Praroop_Anand.pdf) for quick reference. If you have an open problem, an integration, or an automation pipeline on your roadmap, I would be glad to build a small working prototype or take a quick trial task to prove my approach.
+I have attached my resume (Praroop_Anand.pdf) for quick reference. I would welcome the opportunity to connect and discuss open engineering roles.
 
 Best regards,
 Praroop""",
@@ -82,7 +82,7 @@ I focus on clean architecture, intuitive UI, and resilient backend systems. You 
 • Portfolio: https://praroop.site
 • GitHub: https://github.com/Praroop1435
 
-My resume (Praroop_Anand.pdf) is attached for your review. I would welcome the opportunity to discuss how my skill set can support {{company}}'s engineering goals, and I am happy to complete a technical assessment or build a prototype feature.
+My resume (Praroop_Anand.pdf) is attached for your review. I would welcome the opportunity to connect and discuss open engineering roles.
 
 Thank you for your time and consideration.
 
@@ -175,27 +175,27 @@ Praroop""",
                 category="Follow-up"
             ),
             EmailTemplate(
-                name="Research & Engineering Pitch (Full Stack AI Engineer)",
-                subject_template="Full Stack AI Engineer: Praroop Anand | {{company}}",
+                name="AI Engineer Application (Scalable Systems & Infrastructure)",
+                subject_template="Application: AI Engineer | Praroop Anand",
                 body_template="""Hi {{firstName}},
 
-I came across {{company}} recently and spent time researching what you and the team are building around {{custom_hook}}. I am genuinely impressed by your approach and very interested in contributing to {{company}} as a Full Stack AI Engineer.
+I came across {{company}} and researched your work on {{custom_hook}}.
 
-A bit about my background: I build and deploy production AI systems, backend pipelines, and interactive full-stack applications (FastAPI, Next.js/TypeScript, PostgreSQL, Redis, Docker):
-• AI Social Automate (https://aisocialautomate.com/): Autonomous media generation engine with async task queues, Redis caching, and automated multi-platform publishing.
-• InsightFlow AI (https://portal.e360insurance.com/): Enterprise intelligence platform with FastAPI, pgvector semantic search (92% RAGAS benchmark), and autonomous agent workflows.
+I am an AI Engineer focused on building infrastructure and scalable systems (FastAPI, Next.js/TypeScript, PostgreSQL, Redis, Docker). I am writing to apply for the AI Engineer role at {{company}}.
 
-Live portfolio & code:
-• Portfolio: https://praroop.site
-• GitHub: https://github.com/Praroop1435
+Recent production systems I have built:
+• AI Social Automate (https://aisocialautomate.com/): Autonomous media generation engine with async task queues.
+• InsightFlow AI (https://portal.e360insurance.com/): Enterprise intelligence platform with pgvector semantic retrieval.
 
-My resume is attached (Praroop_Anand.pdf) for your review. If your engineering team has room for a driven Full Stack AI Engineer, I would love 10 minutes to learn more about your technical roadmap. I am also happy to complete a trial task or build a proof-of-concept prototype to show how I work.
+Portfolio: https://praroop.site | GitHub: https://github.com/Praroop1435
+
+My resume is attached for your review. I would welcome the opportunity to connect and discuss open engineering roles.
 
 Best regards,
 Praroop Anand
 +91-8210118421
 anandpraroop@gmail.com""",
-                category="Cold Outreach"
+                category="Job Application"
             )
         ]
         for t in curated_templates:
