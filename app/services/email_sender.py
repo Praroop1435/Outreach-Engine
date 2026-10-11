@@ -27,6 +27,8 @@ def render_template(template_str: str, lead: Lead) -> str:
         "custom_hook": lead.custom_hook or "your recent work",
         "email": lead.email,
         "website": lead.website_url or "",
+        "job_role": lead.notes or "AI Engineer",
+        "target_role": lead.notes or "AI Engineer",
     }
     rendered = template_str
     for key, value in mapping.items():

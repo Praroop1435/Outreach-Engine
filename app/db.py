@@ -176,12 +176,12 @@ Praroop""",
             ),
             EmailTemplate(
                 name="AI Engineer Application (Scalable Systems & Infrastructure)",
-                subject_template="Application: AI Engineer | Praroop Anand",
+                subject_template="Application: {{job_role}} | Praroop Anand",
                 body_template="""Hi {{firstName}},
 
 I came across {{company}} and researched your work on {{custom_hook}}.
 
-I am an AI Engineer focused on building infrastructure and scalable systems (FastAPI, Next.js/TypeScript, PostgreSQL, Redis, Docker). I am writing to apply for the AI Engineer role at {{company}}.
+I am an AI Engineer focused on building infrastructure and scalable systems (FastAPI, Next.js/TypeScript, PostgreSQL, Redis, Docker). I am writing to apply for the {{job_role}} role at {{company}}.
 
 Recent production systems I have built:
 • AI Social Automate (https://aisocialautomate.com/) | Loom demo: https://www.loom.com/share/f640c1a4815b424393261574b37d93b4
