@@ -49,8 +49,8 @@ I am a full-stack engineer and AI automation developer (FastAPI, Next.js/TypeScr
 
 A couple of production systems I have built:
 
-• AI Social Automate (https://aisocialautomate.com/): Autonomous content engine with automated media pipelines and scheduled async task queues (Celery/Redis).
-• InsightFlow AI (https://portal.e360insurance.com/): Production insurance intelligence platform with FastAPI, pgvector semantic retrieval (92% RAGAS benchmark), and Claude-powered assistant modules.
+• AI Social Automate (https://aisocialautomate.com/) | Loom demo: https://www.loom.com/share/f640c1a4815b424393261574b37d93b4 - Autonomous content engine with automated media pipelines and scheduled async task queues (Celery/Redis).
+• InsightFlow AI (https://portal.e360insurance.com/) | Loom demo: https://www.loom.com/share/5f715f784c3142e690f16f8df66f3799 - Production insurance intelligence platform with FastAPI, pgvector semantic retrieval (92% RAGAS benchmark), and Claude-powered assistant modules.
 
 I focus on clean architecture, resilient async backends, and shipping code that holds up in production.
 
@@ -184,8 +184,10 @@ I came across {{company}} and researched your work on {{custom_hook}}.
 I am an AI Engineer focused on building infrastructure and scalable systems (FastAPI, Next.js/TypeScript, PostgreSQL, Redis, Docker). I am writing to apply for the AI Engineer role at {{company}}.
 
 Recent production systems I have built:
-• AI Social Automate (https://aisocialautomate.com/): Autonomous media generation engine with async task queues.
-• InsightFlow AI (https://portal.e360insurance.com/): Enterprise intelligence platform with pgvector semantic retrieval.
+• AI Social Automate (https://aisocialautomate.com/) | Loom demo: https://www.loom.com/share/f640c1a4815b424393261574b37d93b4
+  Autonomous media generation engine with async task queues.
+• InsightFlow AI (https://portal.e360insurance.com/) | Loom demo: https://www.loom.com/share/5f715f784c3142e690f16f8df66f3799
+  Enterprise intelligence platform with pgvector semantic retrieval.
 
 Portfolio: https://praroop.site | GitHub: https://github.com/Praroop1435
 
