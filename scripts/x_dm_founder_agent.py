@@ -196,7 +196,11 @@ def process_founder_dms(batch_size: int = 10, auto_send: bool = True):
                     bodyText.includes("You can't message this account") ||
                     bodyText.includes("has a closed inbox") ||
                     bodyText.includes("closed inbox") ||
-                    bodyText.includes("Use X Number")
+                    bodyText.includes("Use X Number") ||
+                    bodyText.includes("Only verified users can send Direct Message requests") ||
+                    bodyText.includes("Get verified to message") ||
+                    bodyText.includes("Get verified to continue") ||
+                    bodyText.includes("Upgrade to Plus")
                 );
                 const textarea = sr.querySelector("[data-testid='dm-composer-textarea']");
 
@@ -214,10 +218,10 @@ def process_founder_dms(batch_size: int = 10, auto_send: bool = True):
                 chat_info = {"canSend": False, "isReadOnly": True}
 
             if not chat_info.get("canSend"):
-                print(f"  🔒 DM for @{handle} is restricted (Read-only notice / unverified required).")
+                print(f"  🔒 DM for @{handle} is restricted (Closed inbox / verified accounts only required).")
                 print(f"     (Strict Guardrail: Marking DM_CLOSED, NOT visiting website).")
                 lead.status = "DM_CLOSED"
-                lead.notes = (lead.notes or "") + " | Read-only mode on X chat"
+                lead.notes = (lead.notes or "") + " | DM closed / verified only on X chat"
                 session.add(lead)
                 session.commit()
                 app_cache.invalidate()
@@ -228,32 +232,33 @@ def process_founder_dms(batch_size: int = 10, auto_send: bool = True):
             dm_text = generate_human_dm(founder_name, company, lead.custom_hook or "")
             print(f"  📝 Message:\n{'-'*40}\n{dm_text}\n{'-'*40}")
 
-            # Focus textarea
-            focus_js = """
-            window.name = (function() {
-                const sh = Array.from(document.querySelectorAll("*")).find(el => el.shadowRoot);
-                if (!sh) return "NO_SHADOW";
-                const sr = sh.shadowRoot;
-                const textarea = sr.querySelector("[data-testid='dm-composer-textarea']");
-                if (textarea) {
-                    textarea.focus();
-                    return "FOCUSED";
-                }
-                return "TEXTAREA_NOT_FOUND";
-            })();
-            """
-            execute_js_in_brave(focus_js)
-            time.sleep(0.5)
-
-            # Copy to clipboard
-            copy_to_clipboard(dm_text)
-
             if auto_send:
-                print(f"  🚀 Sending DM to @{handle} via native keystroke...")
-                send_clipboard_in_active_window()
+                print(f"  🚀 Sending DM to @{handle} via direct composer dispatch...")
+                send_js = f"""
+                window.name = (function() {{
+                    const sh = Array.from(document.querySelectorAll('*')).find(el => el.shadowRoot);
+                    if (!sh) return JSON.stringify({{ ok: false, error: "NO_SHADOW" }});
+                    const sr = sh.shadowRoot;
+                    const textarea = sr.querySelector("[data-testid='dm-composer-textarea']");
+                    if (!textarea) return JSON.stringify({{ ok: false, error: "NO_TEXTAREA" }});
+
+                    textarea.focus();
+                    textarea.value = {json.dumps(dm_text)};
+                    textarea.dispatchEvent(new Event("input", {{ bubbles: true }}));
+                    textarea.dispatchEvent(new Event("change", {{ bubbles: true }}));
+
+                    const sendBtn = sr.querySelector("[data-testid='dm-composer-send-button']");
+                    if (!sendBtn) return JSON.stringify({{ ok: false, error: "NO_SEND_BTN" }});
+
+                    sendBtn.click();
+                    return JSON.stringify({{ ok: true }});
+                }})();
+                """
+                send_res_str = execute_js_in_brave(send_js)
                 time.sleep(2.5)
 
                 lead.status = "DMED"
+                lead.notes = (lead.notes or "") + " | Sent via X DM Agent"
                 msg = EmailMessage(
                     lead_id=lead.id,
                     channel=MessageChannel.X_DM.value,
@@ -269,15 +274,22 @@ def process_founder_dms(batch_size: int = 10, auto_send: bool = True):
                 app_cache.invalidate()
                 print(f"  ✅ Message SENT! Status updated to DMED in Neon DB.\n")
             else:
-                # Stage only (paste into composer without pressing Enter)
-                ascript_paste = '''
-                tell application "Brave Browser" to activate
-                delay 0.4
-                tell application "System Events"
-                    keystroke "v" using command down
-                end tell
-                '''
-                subprocess.run(["osascript", "-e", ascript_paste])
+                # Stage only (inject into composer without clicking send)
+                stage_js = f"""
+                window.name = (function() {{
+                    const sh = Array.from(document.querySelectorAll('*')).find(el => el.shadowRoot);
+                    if (!sh) return "NO_SHADOW";
+                    const sr = sh.shadowRoot;
+                    const textarea = sr.querySelector("[data-testid='dm-composer-textarea']");
+                    if (!textarea) return "NO_TEXTAREA";
+
+                    textarea.focus();
+                    textarea.value = {json.dumps(dm_text)};
+                    textarea.dispatchEvent(new Event("input", {{ bubbles: true }}));
+                    return "STAGED";
+                }})();
+                """
+                execute_js_in_brave(stage_js)
                 lead.status = "DM_STAGED"
                 session.add(lead)
                 session.commit()
