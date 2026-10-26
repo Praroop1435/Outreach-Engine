@@ -88,26 +88,33 @@ def send_clipboard_in_active_window():
     '''
     subprocess.run(["osascript", "-e", ascript], check=True)
 
-def process_founder_dms(batch_size: int = 10, auto_send: bool = True):
+def process_founder_dms(batch_size: int = None, auto_send: bool = True):
     print("=" * 65)
-    print("X AUTONOMOUS FOUNDER DM AGENT")
-    print(f"Batch Size: {batch_size} | Auto-Send: {auto_send}")
+    print("X AUTONOMOUS FOUNDER DM AGENT - FULL EXECUTION")
+    print(f"Batch Size: {'ALL REMAINING' if batch_size is None else batch_size} | Auto-Send: {auto_send}")
     print("=" * 65)
 
     with Session(engine) as session:
         # Prioritize DM_STAGED and PENDING_DM
-        leads = session.exec(
+        query = (
             select(Lead)
             .where(col(Lead.status).in_(["DM_STAGED", "PENDING_DM"]))
             .where(Lead.x_handle != None)
-            .limit(batch_size)
-        ).all()
+            .order_by(Lead.id)
+        )
+        if batch_size is not None:
+            query = query.limit(batch_size)
+
+        leads = session.exec(query).all()
 
         if not leads:
             print("No pending or staged leads found in Neon DB.")
             return
 
-        print(f"Loaded {len(leads)} target founders from Neon DB.\n")
+        print(f"Loaded {len(leads)} target founders to process from Neon DB.\n")
+        sent_count = 0
+        closed_count = 0
+        invalid_count = 0
 
         for idx, lead in enumerate(leads, 1):
             handle = lead.x_handle.lstrip("@")
@@ -149,6 +156,7 @@ def process_founder_dms(batch_size: int = 10, auto_send: bool = True):
                 session.add(lead)
                 session.commit()
                 app_cache.invalidate()
+                invalid_count += 1
                 continue
 
             if not info.get("hasDmBtn"):
@@ -159,6 +167,7 @@ def process_founder_dms(batch_size: int = 10, auto_send: bool = True):
                 session.add(lead)
                 session.commit()
                 app_cache.invalidate()
+                closed_count += 1
                 continue
 
             # 3. Click DM button to inspect chat room
@@ -225,6 +234,7 @@ def process_founder_dms(batch_size: int = 10, auto_send: bool = True):
                 session.add(lead)
                 session.commit()
                 app_cache.invalidate()
+                closed_count += 1
                 continue
 
             # 5. DM is OPEN and WRITABLE!
@@ -272,6 +282,7 @@ def process_founder_dms(batch_size: int = 10, auto_send: bool = True):
                 session.add(msg)
                 session.commit()
                 app_cache.invalidate()
+                sent_count += 1
                 print(f"  ✅ Message SENT! Status updated to DMED in Neon DB.\n")
             else:
                 # Stage only (inject into composer without clicking send)
@@ -298,7 +309,10 @@ def process_founder_dms(batch_size: int = 10, auto_send: bool = True):
 
             time.sleep(2)
 
-    print("\nBatch execution completed! All statuses updated in Neon DB.")
+    print("\n" + "=" * 65)
+    print("ALL REMAINING DMS EXECUTION COMPLETED!")
+    print(f"Total Processed: {len(leads)} | Sent: {sent_count} | Closed: {closed_count} | Invalid: {invalid_count}")
+    print("=" * 65)
 
 if __name__ == "__main__":
-    process_founder_dms(batch_size=5, auto_send=True)
+    process_founder_dms(batch_size=None, auto_send=True)
