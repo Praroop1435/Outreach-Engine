@@ -32,7 +32,12 @@ import {
   Inbox,
   ArrowUpRight,
   Eye,
-  Filter
+  Filter,
+  LayoutDashboard,
+  Menu,
+  SendHorizontal,
+  Radio,
+  Share2
 } from 'lucide-react';
 
 interface ProspectReply {
@@ -174,6 +179,11 @@ export default function OutreachEngineDashboard() {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Sidebar Navigation State
+  const [activeSidebarNav, setActiveSidebarNav] = useState<'pipeline' | 'founder_dms'>('pipeline');
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [founderStatusFilter, setFounderStatusFilter] = useState('ALL');
+
   // Drawers and Modals
   const [activeDrawerLead, setActiveDrawerLead] = useState<Lead | null>(null);
   const [isComposeModalOpen, setIsComposeModalOpen] = useState(false);
@@ -251,9 +261,21 @@ export default function OutreachEngineDashboard() {
         apiFetch('/api/analytics/replies')
       ]);
 
-      if (leadsRes.ok) setLeads(await leadsRes.json());
-      if (analyticsRes.ok) setAnalytics(await analyticsRes.json());
-      if (templatesRes.ok) setTemplates(await templatesRes.json());
+      if (leadsRes.ok) {
+        const lData = await leadsRes.json();
+        setLeads(lData);
+        try { localStorage.setItem('cached_outreach_leads', JSON.stringify(lData)); } catch (_) {}
+      }
+      if (analyticsRes.ok) {
+        const aData = await analyticsRes.json();
+        setAnalytics(aData);
+        try { localStorage.setItem('cached_outreach_analytics', JSON.stringify(aData)); } catch (_) {}
+      }
+      if (templatesRes.ok) {
+        const tData = await templatesRes.json();
+        setTemplates(tData);
+        try { localStorage.setItem('cached_outreach_templates', JSON.stringify(tData)); } catch (_) {}
+      }
       if (resumeRes.ok) setResumeStatus(await resumeRes.json());
       if (repliesRes.ok) setReplies(await repliesRes.json());
     } catch (err) {
@@ -263,9 +285,18 @@ export default function OutreachEngineDashboard() {
     }
   }, []);
 
-  // In-memory instant filtering (0ms latency, zero network round-trip)
+  // Segregate founder directory leads vs general outreach pipeline
+  const founderLeads = useMemo(() => {
+    return leads.filter(l => (l.source && l.source.includes('1500+')) || (l.status && l.status.includes('DM')) || !!l.x_handle);
+  }, [leads]);
+
+  const regularLeads = useMemo(() => {
+    return leads.filter(l => !(l.source && l.source.includes('1500+')) && !(l.status && l.status.includes('DM')));
+  }, [leads]);
+
+  // In-memory instant filtering for regular pipeline leads
   const filteredLeads = useMemo(() => {
-    return leads.filter(lead => {
+    return regularLeads.filter(lead => {
       // 1. Status Filter
       if (statusFilter !== 'ALL') {
         const s = (lead.status || '').toUpperCase();
@@ -296,19 +327,80 @@ export default function OutreachEngineDashboard() {
 
       return true;
     });
-  }, [leads, statusFilter, searchQuery]);
+  }, [regularLeads, statusFilter, searchQuery]);
+
+  // In-memory instant filtering for Founder X DMs
+  const filteredFounderLeads = useMemo(() => {
+    return founderLeads.filter(lead => {
+      if (founderStatusFilter !== 'ALL') {
+        if (lead.status !== founderStatusFilter) return false;
+      }
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const fullName = `${lead.first_name || ''} ${lead.last_name || ''}`.toLowerCase();
+        const comp = (lead.company || '').toLowerCase();
+        const handle = (lead.x_handle || '').toLowerCase();
+        const notes = (lead.notes || '').toLowerCase();
+        return fullName.includes(q) || comp.includes(q) || handle.includes(q) || notes.includes(q);
+      }
+      return true;
+    });
+  }, [founderLeads, founderStatusFilter, searchQuery]);
 
   // Dynamically computed tab counts in 0ms
   const tabCounts = useMemo(() => {
     return {
-      all: leads.length,
-      notContacted: leads.filter(l => l.status === 'NOT_CONTACTED').length,
-      contacted: leads.filter(l => ['CONTACTED', 'FOLLOWED_UP', 'REPLIED', 'INTERESTED'].includes(l.status)).length,
-      replied: leads.filter(l => ['REPLIED', 'INTERESTED'].includes(l.status)).length,
-      followedUp: leads.filter(l => l.status === 'FOLLOWED_UP').length,
-      bounced: leads.filter(l => ['BOUNCED', 'INVALID_EMAIL'].includes(l.status)).length
+      all: regularLeads.length,
+      notContacted: regularLeads.filter(l => l.status === 'NOT_CONTACTED').length,
+      contacted: regularLeads.filter(l => ['CONTACTED', 'FOLLOWED_UP', 'REPLIED', 'INTERESTED'].includes(l.status)).length,
+      replied: regularLeads.filter(l => ['REPLIED', 'INTERESTED'].includes(l.status)).length,
+      followedUp: regularLeads.filter(l => l.status === 'FOLLOWED_UP').length,
+      bounced: regularLeads.filter(l => ['BOUNCED', 'INVALID_EMAIL'].includes(l.status)).length
     };
-  }, [leads]);
+  }, [regularLeads]);
+
+  // Dynamically computed founder tab counts
+  const founderTabCounts = useMemo(() => {
+    return {
+      all: founderLeads.length,
+      pending: founderLeads.filter(l => l.status === 'PENDING_DM').length,
+      staged: founderLeads.filter(l => l.status === 'DM_STAGED').length,
+      dmed: founderLeads.filter(l => l.status === 'DMED').length,
+      closed: founderLeads.filter(l => l.status === 'DM_CLOSED').length,
+      invalid: founderLeads.filter(l => l.status === 'INVALID_PROFILE').length
+    };
+  }, [founderLeads]);
+
+  const handleMarkDMed = async (leadId: number) => {
+    try {
+      const res = await apiFetch(`/api/leads/${leadId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'DMED' })
+      });
+      setLeads(prev => {
+        const updated = prev.map(l => l.id === leadId ? { ...l, status: 'DMED' } : l);
+        try { localStorage.setItem('cached_outreach_leads', JSON.stringify(updated)); } catch (_) {}
+        return updated;
+      });
+      showToast('Lead marked as DMED in Neon DB');
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  const copyFounderPitch = (lead: Lead) => {
+    const fn = lead.first_name || 'there';
+    const comp = lead.company || 'your team';
+    const msg = `Hey ${fn}, saw what you are building at ${comp}!\n\n` +
+      `I build production AI agent workflows and scalable backend systems (FastAPI, Next.js, PostgreSQL, Redis, Docker). At Relu Consultancy, I ship client AI systems ranging from pgvector RAG engines to autonomous async task queues.\n\n` +
+      `Dropped a quick Loom demo of an enterprise intelligence platform I built, plus my portfolio:\n` +
+      `Loom: https://www.loom.com/share/5f715f784c3142e690f16f8df66f3799\n` +
+      `Portfolio: praroop.site\n\n` +
+      `Would love to chat or build out a proof of concept if you have an active engineering backlog!`;
+    navigator.clipboard.writeText(msg);
+    showToast(`Pitch for ${lead.first_name || 'Founder'} copied to clipboard!`);
+  };
 
   const handleManualSyncMailbox = async () => {
     setIsSyncingMailbox(true);
@@ -326,6 +418,19 @@ export default function OutreachEngineDashboard() {
   };
 
   useEffect(() => {
+    // 1. Instant render from localStorage cache
+    try {
+      const cachedLeads = localStorage.getItem('cached_outreach_leads');
+      const cachedAnalytics = localStorage.getItem('cached_outreach_analytics');
+      const cachedTemplates = localStorage.getItem('cached_outreach_templates');
+      if (cachedLeads) setLeads(JSON.parse(cachedLeads));
+      if (cachedAnalytics) setAnalytics(JSON.parse(cachedAnalytics));
+      if (cachedTemplates) setTemplates(JSON.parse(cachedTemplates));
+      if (cachedLeads) setIsLoading(false);
+    } catch (e) {
+      console.error('Failed to parse cache:', e);
+    }
+    // 2. Background revalidation
     fetchData();
   }, [fetchData]);
 
@@ -692,6 +797,16 @@ export default function OutreachEngineDashboard() {
   // Helper Badge Colors in Ocean Palette
   const getStatusBadge = (status: string) => {
     switch (status.toUpperCase()) {
+      case 'DMED':
+        return 'bg-purple-50 text-purple-700 border-purple-200 font-bold';
+      case 'DM_STAGED':
+        return 'bg-sky-50 text-sky-700 border-sky-200 font-semibold';
+      case 'DM_OPEN':
+        return 'bg-emerald-50 text-emerald-700 border-emerald-200 font-semibold';
+      case 'PENDING_DM':
+        return 'bg-amber-50 text-amber-700 border-amber-200';
+      case 'DM_CLOSED':
+        return 'bg-zinc-100 text-zinc-600 border-zinc-200';
       case 'CONTACTED':
         return 'bg-sky-50 text-sky-700 border-sky-200';
       case 'REPLIED':
@@ -702,6 +817,7 @@ export default function OutreachEngineDashboard() {
         return 'bg-blue-50 text-blue-700 border-blue-200';
       case 'BOUNCED':
       case 'INVALID_EMAIL':
+      case 'INVALID_PROFILE':
         return 'bg-rose-50 text-rose-700 border-rose-200';
       default:
         return 'bg-slate-100 text-slate-600 border-slate-200';
@@ -717,8 +833,17 @@ export default function OutreachEngineDashboard() {
     { id: 'BOUNCED', label: 'Bounced', count: tabCounts.bounced }
   ];
 
+  const founderFilterTabs = [
+    { id: 'ALL', label: 'All Founders', count: founderTabCounts.all },
+    { id: 'PENDING_DM', label: 'Pending Check', count: founderTabCounts.pending },
+    { id: 'DM_STAGED', label: 'DM Staged', count: founderTabCounts.staged },
+    { id: 'DMED', label: 'DMed / Sent', count: founderTabCounts.dmed },
+    { id: 'DM_CLOSED', label: 'DM Closed', count: founderTabCounts.closed },
+    { id: 'INVALID_PROFILE', label: 'Invalid Profile', count: founderTabCounts.invalid }
+  ];
+
   return (
-    <div className="min-h-screen bg-slate-50/70 text-slate-900 font-sans antialiased">
+    <div className="min-h-screen bg-slate-50/70 text-slate-900 font-sans antialiased flex flex-col lg:flex-row">
       {/* Toast Notification Banner */}
       {toastMessage && (
         <div className={`fixed top-4 right-4 z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-xl shadow-lg border text-xs font-medium animate-in fade-in slide-in-from-top-2 duration-200 ${
@@ -735,107 +860,285 @@ export default function OutreachEngineDashboard() {
         </div>
       )}
 
-      {/* Main Container */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-        
-        {/* Top Header */}
-        <header className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-xs flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2.5">
-              <img 
-                src="/icon.svg" 
-                alt="Outreach Engine Logo" 
-                className="w-8 h-8 rounded-lg drop-shadow-xs hover:scale-105 transition-transform" 
-              />
-              <div>
-                <h1 className="text-lg sm:text-xl font-bold tracking-tight text-slate-950">
-                  outreach engine
-                </h1>
-              </div>
-            </div>
+      {/* Mobile Top Bar */}
+      <div className="lg:hidden bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between sticky top-0 z-30">
+        <div className="flex items-center gap-2.5">
+          <img src="/icon.svg" alt="Logo" className="w-7 h-7 rounded-lg" />
+          <span className="font-bold text-slate-950 text-sm tracking-tight">outreach engine</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setIsRepliesModalOpen(true)}
+            className="p-1.5 text-slate-600 hover:text-slate-900 relative"
+          >
+            <Bell className="w-4 h-4" />
+            {replies.length > 0 && (
+              <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-sky-600 rounded-full" />
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
+            className="p-1.5 text-slate-600 hover:text-slate-900 border border-slate-200 rounded-lg"
+          >
+            <Menu className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
 
-            <span className="text-xs text-sky-900 bg-sky-50/80 px-2.5 py-1 rounded-lg border border-sky-200 font-mono">
-              anandpraroop@gmail.com
-            </span>
-            
-            {/* Resume Upload Pill */}
-            <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200 text-xs">
-              <Paperclip className="w-3.5 h-3.5 text-sky-600" />
-              <span className="font-mono text-slate-800 text-[11px] font-medium truncate max-w-[140px]">
-                {resumeStatus.filename}
-              </span>
-              <span className="text-[10px] text-slate-400 font-mono">
-                ({resumeStatus.size_kb} KB)
-              </span>
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="ml-1 text-[11px] font-semibold text-sky-600 hover:text-sky-700 hover:underline flex items-center gap-0.5"
-                title="Upload updated PDF resume"
-              >
-                <Upload className="w-3 h-3" />
-                <span>Update</span>
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf"
-                className="hidden"
-                onChange={handleResumeUpload}
-              />
+      {/* Mobile Slide-in Drawer */}
+      {isMobileSidebarOpen && (
+        <div className="lg:hidden fixed inset-0 z-50 flex" onClick={() => setIsMobileSidebarOpen(false)}>
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs" />
+          <div className="relative w-72 bg-white h-full shadow-2xl p-5 flex flex-col justify-between" onClick={e => e.stopPropagation()}>
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <img src="/icon.svg" alt="Logo" className="w-7 h-7 rounded-lg" />
+                  <span className="font-bold text-slate-950 text-sm tracking-tight">outreach engine</span>
+                </div>
+                <button type="button" onClick={() => setIsMobileSidebarOpen(false)} className="p-1 text-slate-400">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <nav className="space-y-1">
+                <button
+                  type="button"
+                  onClick={() => { setActiveSidebarNav('pipeline'); setIsMobileSidebarOpen(false); }}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition ${
+                    activeSidebarNav === 'pipeline' ? 'bg-sky-50 text-sky-800 border border-sky-200' : 'text-slate-600'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <LayoutDashboard className="w-4 h-4 text-sky-600" />
+                    <span>Pipeline & Contacts</span>
+                  </div>
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600">
+                    {regularLeads.length}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => { setActiveSidebarNav('founder_dms'); setIsMobileSidebarOpen(false); }}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition ${
+                    activeSidebarNav === 'founder_dms' ? 'bg-purple-50 text-purple-800 border border-purple-200' : 'text-slate-600'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <SendHorizontal className="w-4 h-4 text-purple-600" />
+                    <span>Founder X DMs (1500+)</span>
+                  </div>
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-purple-100 text-purple-800 font-bold">
+                    {founderLeads.length}
+                  </span>
+                </button>
+              </nav>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Desktop Sticky Sidebar */}
+      <aside className="hidden lg:flex flex-col w-64 bg-white border-r border-slate-200/80 h-screen sticky top-0 z-40 p-5 justify-between shrink-0 shadow-2xs">
+        {/* Top: Logo & Navigation */}
+        <div className="space-y-6">
+          <div className="flex items-center gap-3">
+            <img src="/icon.svg" alt="Logo" className="w-8 h-8 rounded-lg shadow-2xs" />
+            <div>
+              <h1 className="text-base font-bold text-slate-950 tracking-tight leading-none">outreach engine</h1>
+              <p className="text-[10px] text-slate-400 font-mono mt-0.5">ai outreach &amp; x dms</p>
             </div>
           </div>
 
-          {/* Action Toolbar */}
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Sync Mailbox Button */}
+          {/* System Health Monitor Card */}
+          <div className="bg-slate-50/90 rounded-xl p-2.5 border border-slate-200/90 text-[11px] space-y-1.5 font-mono">
+            <div className="flex items-center justify-between">
+              <span className="text-slate-500 text-[10px]">BACKEND STATUS</span>
+              <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-600">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Hot (Render)
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-[10px] text-slate-500">
+              <span>LOCAL PORT</span>
+              <span className="text-slate-800 font-semibold">:8437 Active</span>
+            </div>
+            <div className="flex items-center justify-between text-[10px] text-slate-500">
+              <span>CRON KEEPALIVE</span>
+              <span className="text-sky-600 font-semibold">Running</span>
+            </div>
+          </div>
+
+          {/* Navigation Links */}
+          <nav className="space-y-1">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 mb-2">Workspace</div>
+            
             <button
               type="button"
-              onClick={handleManualSyncMailbox}
-              disabled={isSyncingMailbox}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-sky-50/50 hover:border-sky-300 hover:text-sky-700 transition disabled:opacity-60 shadow-2xs"
-              title="Poll Gmail IMAP for new prospect replies"
+              onClick={() => setActiveSidebarNav('pipeline')}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition ${
+                activeSidebarNav === 'pipeline'
+                  ? 'bg-sky-50 text-sky-800 border border-sky-200 shadow-2xs'
+                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+              }`}
             >
-              <RefreshCw className={`w-3.5 h-3.5 text-sky-600 ${isSyncingMailbox ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">{isSyncingMailbox ? 'Checking...' : 'Sync Inbox'}</span>
+              <div className="flex items-center gap-2.5">
+                <LayoutDashboard className={`w-4 h-4 ${activeSidebarNav === 'pipeline' ? 'text-sky-600' : 'text-slate-400'}`} />
+                <span>Outreach Pipeline</span>
+              </div>
+              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-white border border-slate-200 text-slate-600">
+                {regularLeads.length}
+              </span>
             </button>
 
-            {/* Notification Bell */}
+            <button
+              type="button"
+              onClick={() => setActiveSidebarNav('founder_dms')}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition ${
+                activeSidebarNav === 'founder_dms'
+                  ? 'bg-purple-50 text-purple-900 border border-purple-200 shadow-2xs'
+                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <SendHorizontal className={`w-4 h-4 ${activeSidebarNav === 'founder_dms' ? 'text-purple-600' : 'text-slate-400'}`} />
+                <span>Founder X DMs</span>
+              </div>
+              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-purple-100 text-purple-800 font-bold">
+                {founderLeads.length}
+              </span>
+            </button>
+
+            <div className="pt-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 mb-2">Tools &amp; Logs</div>
+
+            <button
+              type="button"
+              onClick={() => openTemplateBuilder()}
+              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition"
+            >
+              <Layers className="w-4 h-4 text-slate-400" />
+              <span>Templates Studio</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => openClicksModal(null)}
+              className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition"
+            >
+              <div className="flex items-center gap-2.5">
+                <MousePointerClick className="w-4 h-4 text-slate-400" />
+                <span>Link Clicks / UTM</span>
+              </div>
+              {analytics.total_link_clicks > 0 && (
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-cyan-100 text-cyan-800 font-bold">
+                  {analytics.total_link_clicks}
+                </span>
+              )}
+            </button>
+
             <button
               type="button"
               onClick={() => setIsRepliesModalOpen(true)}
-              className="relative p-2 text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-sky-50/50 hover:border-sky-300 transition shadow-2xs"
-              title="Prospect Replies & Inbound Notifications"
+              className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition"
             >
-              <Bell className="w-4 h-4 text-slate-600" />
+              <div className="flex items-center gap-2.5">
+                <Inbox className="w-4 h-4 text-slate-400" />
+                <span>Inbox Replies</span>
+              </div>
               {replies.length > 0 && (
-                <span className="absolute -top-1 -right-1 bg-sky-600 text-white font-mono text-[9px] min-w-4 h-4 px-1 rounded-full flex items-center justify-center font-bold shadow-xs">
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-rose-500 text-white font-bold">
                   {replies.length}
                 </span>
               )}
             </button>
 
-            {/* Templates Button */}
             <button
               type="button"
-              onClick={() => openTemplateBuilder()}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-sky-50/50 hover:border-sky-300 hover:text-sky-700 transition shadow-2xs"
+              onClick={handleManualSyncMailbox}
+              disabled={isSyncingMailbox}
+              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition disabled:opacity-60"
             >
-              <Layers className="w-3.5 h-3.5 text-sky-600" />
-              <span>Templates</span>
+              <RefreshCw className={`w-4 h-4 text-slate-400 ${isSyncingMailbox ? 'animate-spin text-sky-600' : ''}`} />
+              <span>{isSyncingMailbox ? 'Syncing...' : 'Sync Mailbox'}</span>
+            </button>
+          </nav>
+        </div>
+
+        {/* Bottom Profile & Resume Card */}
+        <div className="border-t border-slate-100 pt-4 space-y-3">
+          <div className="bg-slate-50/80 p-2.5 rounded-xl border border-slate-200/80 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Active Resume</span>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="text-[10px] font-semibold text-sky-600 hover:underline flex items-center gap-0.5"
+              >
+                <Upload className="w-2.5 h-2.5" />
+                <span>Upload</span>
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <Paperclip className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-[11px] font-mono font-medium text-slate-800 truncate">{resumeStatus.filename}</p>
+                <p className="text-[9px] text-slate-400 font-mono">{resumeStatus.size_kb} KB</p>
+              </div>
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf"
+              className="hidden"
+              onChange={handleResumeUpload}
+            />
+          </div>
+
+          <div className="px-1 text-[11px] text-slate-500 font-mono truncate">
+            anandpraroop@gmail.com
+          </div>
+        </div>
+      </aside>
+
+      {/* Main Content Area */}
+      <main className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 space-y-6">
+        
+        {/* Top Header */}
+        <header className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-bold text-slate-950 tracking-tight">
+              {activeSidebarNav === 'founder_dms' ? 'Founder X DMs Directory' : 'Outreach Pipeline'}
+            </h2>
+            <p className="text-xs text-slate-400 mt-0.5">
+              {activeSidebarNav === 'founder_dms'
+                ? '1,500+ funded startups with verified X handles and human pitch generators'
+                : 'Cold outreach email pipeline, replies, bounces, and link click attribution'}
+            </p>
+          </div>
+
+          {/* Action Toolbar */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleManualSyncMailbox}
+              disabled={isSyncingMailbox}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-sky-50/50 hover:border-sky-300 transition disabled:opacity-60 shadow-2xs"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-sky-600 ${isSyncingMailbox ? 'animate-spin' : ''}`} />
+              <span>{isSyncingMailbox ? 'Checking...' : 'Sync Inbox'}</span>
             </button>
 
-            {/* Import CSV Button */}
             <button
               type="button"
               onClick={() => setIsImportModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-sky-50/50 hover:border-sky-300 hover:text-sky-700 transition shadow-2xs"
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-sky-50/50 hover:border-sky-300 transition shadow-2xs"
             >
               <FileSpreadsheet className="w-3.5 h-3.5 text-sky-600" />
               <span>Import Sheet</span>
             </button>
 
-            {/* Add Contact Primary Button */}
             <button
               type="button"
               onClick={openNewLeadModal}
@@ -846,6 +1149,227 @@ export default function OutreachEngineDashboard() {
             </button>
           </div>
         </header>
+        {activeSidebarNav === 'founder_dms' ? (
+          <div className="space-y-6">
+            {/* Founder KPI Cards */}
+            <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div 
+                onClick={() => setFounderStatusFilter('ALL')}
+                className={`bg-white p-4 sm:p-5 rounded-2xl border transition cursor-pointer group shadow-xs ${
+                  founderStatusFilter === 'ALL' ? 'border-purple-400 ring-2 ring-purple-500/10' : 'border-slate-200/80 hover:border-purple-300'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total Founders</span>
+                  <div className="p-1.5 rounded-lg bg-purple-50 text-purple-600">
+                    <Users className="w-4 h-4" />
+                  </div>
+                </div>
+                <div className="text-2xl sm:text-3xl font-bold text-slate-950 mt-2">
+                  {founderTabCounts.all}
+                </div>
+                <div className="text-xs text-slate-400 mt-1 flex items-center justify-between">
+                  <span>1,500+ Startup Sheet</span>
+                  <span className="text-purple-600 font-medium text-[11px] group-hover:underline">View All &rarr;</span>
+                </div>
+              </div>
+
+              <div 
+                onClick={() => setFounderStatusFilter('DM_STAGED')}
+                className={`bg-white p-4 sm:p-5 rounded-2xl border transition cursor-pointer group shadow-xs ${
+                  founderStatusFilter === 'DM_STAGED' ? 'border-sky-400 ring-2 ring-sky-500/10' : 'border-slate-200/80 hover:border-sky-300'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">DM Open / Ready</span>
+                  <div className="p-1.5 rounded-lg bg-sky-50 text-sky-600">
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                </div>
+                <div className="text-2xl sm:text-3xl font-bold text-slate-950 mt-2">
+                  {founderTabCounts.staged}
+                </div>
+                <div className="text-xs text-slate-400 mt-1 flex items-center justify-between">
+                  <span>verified open DMs</span>
+                  <span className="text-sky-600 font-medium text-[11px] group-hover:underline">Filter &rarr;</span>
+                </div>
+              </div>
+
+              <div 
+                onClick={() => setFounderStatusFilter('DMED')}
+                className={`bg-white p-4 sm:p-5 rounded-2xl border transition cursor-pointer group shadow-xs ${
+                  founderStatusFilter === 'DMED' ? 'border-emerald-400 ring-2 ring-emerald-500/10' : 'border-slate-200/80 hover:border-emerald-300'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">DMed / Sent</span>
+                  <div className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600">
+                    <Send className="w-4 h-4" />
+                  </div>
+                </div>
+                <div className="text-2xl sm:text-3xl font-bold text-slate-950 mt-2">
+                  {founderTabCounts.dmed}
+                </div>
+                <div className="text-xs text-slate-400 mt-1 flex items-center justify-between">
+                  <span>dispatched on X</span>
+                  <span className="text-emerald-600 font-medium text-[11px] group-hover:underline">Filter &rarr;</span>
+                </div>
+              </div>
+
+              <div 
+                onClick={() => setFounderStatusFilter('DM_CLOSED')}
+                className={`bg-white p-4 sm:p-5 rounded-2xl border transition cursor-pointer group shadow-xs ${
+                  founderStatusFilter === 'DM_CLOSED' ? 'border-zinc-400 ring-2 ring-zinc-500/10' : 'border-slate-200/80 hover:border-zinc-300'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">DM Closed</span>
+                  <div className="p-1.5 rounded-lg bg-zinc-100 text-zinc-600">
+                    <X className="w-4 h-4" />
+                  </div>
+                </div>
+                <div className="text-2xl sm:text-3xl font-bold text-slate-950 mt-2">
+                  {founderTabCounts.closed}
+                </div>
+                <div className="text-xs text-slate-400 mt-1 flex items-center justify-between">
+                  <span>sites skipped (step 2)</span>
+                  <span className="text-zinc-600 font-medium text-[11px] group-hover:underline">Filter &rarr;</span>
+                </div>
+              </div>
+            </section>
+
+            {/* Filter Tabs & Search Bar */}
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <div className="inline-flex flex-wrap bg-white p-1 rounded-xl border border-slate-200 shadow-2xs gap-1">
+                {founderFilterTabs.map(tab => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setFounderStatusFilter(tab.id)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                      founderStatusFilter === tab.id
+                        ? 'bg-purple-50 text-purple-900 border border-purple-200 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span>{tab.label}</span>
+                    <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
+                      founderStatusFilter === tab.id ? 'bg-purple-200/80 text-purple-900' : 'bg-slate-100 text-slate-600'
+                    }`}>
+                      {tab.count}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Search input */}
+              <div className="relative w-full md:w-72">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Search founder, company, @handle..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:outline-hidden focus:border-purple-400 focus:ring-2 focus:ring-purple-500/10 text-slate-900 shadow-2xs"
+                />
+              </div>
+            </div>
+
+            {/* Founder Table */}
+            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50/60 font-semibold text-slate-500">
+                      <th className="py-3 px-4">Startup & Category</th>
+                      <th className="py-3 px-4">Founder</th>
+                      <th className="py-3 px-4">X (Twitter)</th>
+                      <th className="py-3 px-4">DM Status</th>
+                      <th className="py-3 px-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredFounderLeads.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="py-12 text-center text-slate-400">
+                          No founder leads found matching current filter.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredFounderLeads.map(lead => {
+                        const handle = (lead.x_handle || '').replace(/^@/, '');
+                        return (
+                          <tr key={lead.id} className="hover:bg-slate-50/70 transition">
+                            <td className="py-3 px-4">
+                              <div className="font-semibold text-slate-900 text-xs">{lead.company}</div>
+                              {lead.custom_hook && (
+                                <div className="text-[11px] text-slate-400 line-clamp-1 max-w-xs">{lead.custom_hook}</div>
+                              )}
+                            </td>
+                            <td className="py-3 px-4">
+                              <div className="font-medium text-slate-800">{lead.first_name} {lead.last_name || ''}</div>
+                              <div className="text-[10px] text-slate-400">{lead.role || 'Founder'}</div>
+                            </td>
+                            <td className="py-3 px-4">
+                              {handle ? (
+                                <a
+                                  href={`https://x.com/${handle}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 font-mono text-purple-700 hover:text-purple-900 hover:underline bg-purple-50/60 px-2 py-0.5 rounded-md border border-purple-200/60"
+                                >
+                                  <span>@{handle}</span>
+                                  <ExternalLink className="w-2.5 h-2.5" />
+                                </a>
+                              ) : (
+                                <span className="text-slate-400">N/A</span>
+                              )}
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border ${getStatusBadge(lead.status)}`}>
+                                {lead.status}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                {handle && (
+                                  <a
+                                    href={`https://x.com/${handle}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-2.5 py-1 text-[11px] font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition"
+                                  >
+                                    Open X
+                                  </a>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => copyFounderPitch(lead)}
+                                  className="px-2.5 py-1 text-[11px] font-semibold text-purple-700 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 transition"
+                                  title="Copy bespoke human pitch with Loom & portfolio"
+                                >
+                                  Copy Pitch
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleMarkDMed(lead.id)}
+                                  className="px-2.5 py-1 text-[11px] font-semibold text-white bg-purple-600 hover:bg-purple-700 rounded-lg shadow-2xs transition"
+                                >
+                                  Mark DMed
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-6">
 
         {/* Interactive KPI Metrics Grid */}
         <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1116,6 +1640,8 @@ export default function OutreachEngineDashboard() {
           </div>
         </div>
       </div>
+      )}
+      </main>
 
       {/* Prospect Replies & Inbox Modal */}
       {isRepliesModalOpen && (

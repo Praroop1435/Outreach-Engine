@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     SMTP_PORT: int = 465
     PORT: int = int(os.getenv("PORT", "8437"))
     RESUME_PATH: str = os.getenv("RESUME_PATH", "/Users/praroopanand/Documents/Resumes/Praroop_Anand.pdf")
+    BOUNCIFY_API_KEY: str = os.getenv("BOUNCIFY_API_KEY", "")
 
     class Config:
         env_file = ".env"

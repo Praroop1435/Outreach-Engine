@@ -1,0 +1,48 @@
+{
+  "personal": {
+    "first_name": "Praroop",
+    "last_name": "Anand",
+    "full_name": "Praroop Anand",
+    "email": "anandpraroop@gmail.com",
+    "phone": "+918210118421",
+    "phone_national": "8210118421",
+    "phone_country_code": "+91",
+    "location": "Bengaluru, Karnataka, India",
+    "city": "Bengaluru",
+    "state": "Karnataka",
+    "country": "India",
+    "postal_code": "560034",
+    "current_title": "AI Engineer",
+    "current_company": "Relu Consultancy",
+    "years_experience": "6 months",
+    "years_experience_numeric": "0.5",
+    "college": "Institute of Engineering and Management (IEM), Kolkata",
+    "degree": "B.Tech, Information Technology",
+    "graduation_date": "May 2027",
+    "current_status": "Currently pursuing B.Tech IT, 8th semester (Expected Graduation: May 2027)"
+  },
+  "links": {
+    "portfolio": "https://praroop.site",
+    "github": "https://github.com/Praroop1435",
+    "linkedin": "https://www.linkedin.com/in/praroop-anand/",
+    "twitter": "https://x.com/anand_praroop",
+    "loom_demo_1": "https://www.loom.com/share/f640c1a4815b424393261574b37d93b4",
+    "loom_demo_2": "https://www.loom.com/share/5f715f784c3142e690f16f8df66f3799"
+  },
+  "documents": {
+    "resume_path": "/Users/praroopanand/Realm/Code/Personal Outrech/resume/Praroop_Anand.pdf"
+  },
+  "cover_letter_snippets": {
+    "pitch": "I am an AI Engineer building production agent workflows and scalable backend systems (FastAPI, Next.js, PostgreSQL, Redis, Docker). At Relu Consultancy, I ship client AI systems ranging from pgvector RAG engines to autonomous async task queues.",
+    "why_us": "I am excited by high-agency engineering environments solving hard problems with generative AI, autonomous agent loops, and real-time data pipelines.",
+    "projects": "Key production builds: 1) AI Social Automate (automated multi-platform media generation and scheduling engine: https://www.loom.com/share/f640c1a4815b424393261574b37d93b4), 2) InsightFlow AI (enterprise intelligence platform with pgvector semantic search: https://www.loom.com/share/5f715f784c3142e690f16f8df66f3799)."
+  },
+  "default_answers": {
+    "authorized_to_work": "Yes",
+    "require_sponsorship": "No",
+    "notice_period": "Immediate (0 days)",
+    "salary_expectation": "Competitive / Open to discussion",
+    "source": "Twitter / X",
+    "preferred_work_location": "Remote / Hybrid (Bengaluru)"
+  }
+}

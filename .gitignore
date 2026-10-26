@@ -15,3 +15,4 @@ linkedin_browser_session.json
 .linkedin_profile/
 .x_profile/
 __pycache__/
+*.log

@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
-const backendUrl = (process.env.BACKEND_URL || "https://outreach-engine-h5lx.onrender.com").replace(/\/$/, "");
+const isDev = process.env.NODE_ENV !== "production";
+const backendUrl = (process.env.BACKEND_URL || (isDev ? "http://localhost:8437" : "https://outreach-engine-h5lx.onrender.com")).replace(/\/$/, "");
 
 const nextConfig: NextConfig = {
   async rewrites() {

@@ -5,12 +5,17 @@ from datetime import datetime
 
 from app.db import get_session
 from app.models import EmailTemplate, EmailTemplateCreate, EmailTemplateUpdate
+from app.cache import app_cache
 
 router = APIRouter(prefix="/api/templates", tags=["Templates"])
 
 @router.get("", response_model=List[EmailTemplate])
 def list_templates(session: Session = Depends(get_session)):
+    cached = app_cache.get("templates:list")
+    if cached is not None:
+        return cached
     templates = session.exec(select(EmailTemplate).order_by(col(EmailTemplate.created_at).asc())).all()
+    app_cache.set("templates:list", templates, ttl_seconds=120)
     return templates
 
 @router.post("", response_model=EmailTemplate)
@@ -28,6 +33,7 @@ def create_template(tmpl_in: EmailTemplateCreate, session: Session = Depends(get
     session.add(tmpl)
     session.commit()
     session.refresh(tmpl)
+    app_cache.invalidate("templates")
     return tmpl
 
 @router.put("/{template_id}", response_model=EmailTemplate)
@@ -43,6 +49,7 @@ def update_template(template_id: int, tmpl_in: EmailTemplateUpdate, session: Ses
     session.add(tmpl)
     session.commit()
     session.refresh(tmpl)
+    app_cache.invalidate("templates")
     return tmpl
 
 @router.delete("/{template_id}")
@@ -52,4 +59,5 @@ def delete_template(template_id: int, session: Session = Depends(get_session)):
         raise HTTPException(status_code=404, detail="Template not found")
     session.delete(tmpl)
     session.commit()
+    app_cache.invalidate("templates")
     return {"ok": True, "message": "Template deleted"}

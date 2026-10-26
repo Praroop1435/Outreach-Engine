@@ -95,7 +95,8 @@ def send_email_to_lead(
     body: str,
     attach_resume: bool = True,
     enable_utm_tracking: bool = True,
-    thread_id: Optional[str] = None
+    thread_id: Optional[str] = None,
+    allow_catchall: bool = False
 ) -> EmailMessage:
     """Sends an email via Gmail SMTP with pre-flight MX verification, disguised UTM link tracking & PDF resume attachment."""
     if not settings.GMAIL_APP_PASSWORD:
@@ -105,7 +106,8 @@ def send_email_to_lead(
 
     # 1. Pre-flight Deliverability & MX Verification
     verif = verify_email_deliverability(lead.email, check_mx=True)
-    if not verif["valid"]:
+    is_valid = verif["valid"] or (allow_catchall and verif.get("bouncify_status") in ("accept all", "accept_all", "accept_all_catchall"))
+    if not is_valid:
         lead.status = LeadStatus.INVALID_EMAIL.value
         session.add(lead)
         session.commit()

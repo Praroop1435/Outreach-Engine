@@ -7,6 +7,7 @@ project_root = "/Users/praroopanand/Realm/Code/Personal Outrech"
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
+# pyrefly: ignore [missing-import]
 from sqlmodel import Session, select
 from app.db import engine
 from app.models import Lead, EmailTemplate, LeadStatus

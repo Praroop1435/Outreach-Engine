@@ -5,11 +5,15 @@ from typing import Dict, Any, List, Optional
 
 from app.db import get_session
 from app.models import Lead, EmailMessage, LeadStatus, EmailDirection, LinkClick
+from app.cache import app_cache
 
 router = APIRouter(prefix="/api/analytics", tags=["Analytics"])
 
 @router.get("/overview")
 def get_analytics_overview(session: Session = Depends(get_session)) -> Dict[str, Any]:
+    cached = app_cache.get("analytics:overview")
+    if cached is not None:
+        return cached
     total_leads = session.exec(select(func.count(Lead.id))).one() or 0
     
     # Status breakdown
@@ -70,7 +74,7 @@ def get_analytics_overview(session: Session = Depends(get_session)) -> Dict[str,
         select(func.count(Lead.id)).where(Lead.status.in_([LeadStatus.BOUNCED.value, LeadStatus.INVALID_EMAIL.value]))
     ).one() or 0
 
-    return {
+    res = {
         "total_leads": total_leads,
         "contacted_count": contacted_count,
         "not_contacted_count": not_contacted_count,
@@ -83,6 +87,8 @@ def get_analytics_overview(session: Session = Depends(get_session)) -> Dict[str,
         "total_link_clicks": total_link_clicks,
         "reply_rate": reply_rate
     }
+    app_cache.set("analytics:overview", res, ttl_seconds=60)
+    return res
 
 @router.get("/clicks")
 def get_all_clicks(
@@ -121,6 +127,11 @@ def get_recent_replies(
     session: Session = Depends(get_session)
 ) -> List[Dict[str, Any]]:
     """Returns incoming replies with prospect info for the notification bell."""
+    cache_key = f"analytics:replies:{limit}"
+    cached = app_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     query = (
         select(EmailMessage, Lead)
         .join(Lead, EmailMessage.lead_id == Lead.id, isouter=True)
@@ -144,4 +155,5 @@ def get_recent_replies(
             "lead_email": lead.email if lead else msg.sender,
             "lead_status": lead.status if lead else "REPLIED"
         })
+    app_cache.set(cache_key, replies_list, ttl_seconds=60)
     return replies_list

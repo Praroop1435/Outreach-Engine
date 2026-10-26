@@ -13,6 +13,7 @@ from app.models import (
 )
 from app.services.email_sender import send_email_to_lead, render_template
 from app.services.sheet_importer import import_leads_from_csv
+from app.cache import app_cache
 
 router = APIRouter(prefix="/api/leads", tags=["Leads"])
 
@@ -24,6 +25,11 @@ def list_leads(
     skip: int = 0,
     limit: int = 200
 ):
+    cache_key = f"leads:{status or 'ALL'}:{search or ''}:{skip}:{limit}"
+    cached = app_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     query = select(Lead)
     if status and status.upper() != "ALL":
         query = query.where(Lead.status == status.upper())
@@ -53,10 +59,12 @@ def list_leads(
         ).all()
         msg_counts = {row[0]: row[1] for row in counts}
 
-    return [
+    result = [
         LeadRead(**l.model_dump(), message_count=msg_counts.get(l.id, 0))
         for l in leads
     ]
+    app_cache.set(cache_key, result, ttl_seconds=60)
+    return result
 
 @router.post("", response_model=LeadRead)
 def create_lead(lead_in: LeadCreate, session: Session = Depends(get_session)):
@@ -81,6 +89,7 @@ def create_lead(lead_in: LeadCreate, session: Session = Depends(get_session)):
     session.add(lead)
     session.commit()
     session.refresh(lead)
+    app_cache.invalidate()
     return LeadRead(**lead.model_dump(), message_count=0)
 
 @router.get("/{lead_id}", response_model=LeadDetail)
@@ -116,6 +125,7 @@ def update_lead(lead_id: int, lead_in: LeadUpdate, session: Session = Depends(ge
     session.add(lead)
     session.commit()
     session.refresh(lead)
+    app_cache.invalidate()
     
     msg_count = session.exec(
         select(func.count(EmailMessage.id)).where(EmailMessage.lead_id == lead.id)
@@ -129,6 +139,7 @@ def delete_lead(lead_id: int, session: Session = Depends(get_session)):
         raise HTTPException(status_code=404, detail="Lead not found")
     session.delete(lead)
     session.commit()
+    app_cache.invalidate()
     return {"ok": True, "message": "Lead deleted successfully"}
 
 @router.post("/preview")
@@ -160,6 +171,7 @@ def send_email(lead_id: int, req: SendEmailRequest, session: Session = Depends(g
             attach_resume=req.attach_resume,
             enable_utm_tracking=req.enable_utm_tracking
         )
+        app_cache.invalidate()
         return {
             "ok": True,
             "message": f"Email sent successfully to {lead.email}",
@@ -173,6 +185,7 @@ def send_email(lead_id: int, req: SendEmailRequest, session: Session = Depends(g
 def import_leads(req: ImportLeadsRequest, session: Session = Depends(get_session)):
     if req.csv_data:
         stats = import_leads_from_csv(session, req.csv_data)
+        app_cache.invalidate()
         return {"ok": True, "stats": stats}
     elif req.leads:
         created = 0
@@ -201,6 +214,7 @@ def import_leads(req: ImportLeadsRequest, session: Session = Depends(get_session
                 session.add(existing)
                 updated += 1
         session.commit()
+        app_cache.invalidate()
         return {"ok": True, "stats": {"created": created, "updated": updated}}
     else:
         raise HTTPException(status_code=400, detail="No CSV data or leads provided")
