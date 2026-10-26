@@ -14,6 +14,11 @@ class LeadStatus(str, Enum):
     BOUNCED = "BOUNCED"
     INVALID_EMAIL = "INVALID_EMAIL"
     ARCHIVED = "ARCHIVED"
+    PENDING_DM = "PENDING_DM"
+    DM_STAGED = "DM_STAGED"
+    DMED = "DMED"
+    DM_CLOSED = "DM_CLOSED"
+    INVALID_PROFILE = "INVALID_PROFILE"
 
 class MessageChannel(str, Enum):
     EMAIL = "EMAIL"

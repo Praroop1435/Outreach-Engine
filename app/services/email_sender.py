@@ -65,14 +65,20 @@ def build_utm_url(url: str, lead: Lead) -> str:
         parsed.fragment
     ))
 
+from app.routers.tracking import encode_tracking_token
+
 def generate_html_body_with_utm(body_text: str, lead: Lead, enable_utm: bool = True) -> str:
-    """Converts plain text body to clean HTML while disguising UTM tracking parameters in anchor hrefs."""
+    """Converts plain text body to clean HTML with tracked redirect tokens in anchor hrefs."""
     escaped_lines = []
+    base_tracking_url = getattr(settings, "TRACKING_BASE_URL", "https://outreach-engine-h5lx.onrender.com").rstrip("/")
     for line in body_text.split("\n"):
         def replace_url(match):
             raw_url = match.group(1).rstrip(".,;")
             trailing_punct = match.group(1)[len(raw_url):]
-            if enable_utm:
+            if enable_utm and lead.id:
+                token = encode_tracking_token(lead.id, raw_url)
+                tracked_url = f"{base_tracking_url}/api/t/click/{token}"
+            elif enable_utm:
                 tracked_url = build_utm_url(raw_url, lead)
             else:
                 tracked_url = raw_url
@@ -116,11 +122,13 @@ def send_email_to_lead(
             err_msg += f" (Suggested alternative: {verif['suggestion']})"
         raise ValueError(err_msg)
 
-    # Construct MIME message (mixed for body + attachments)
+    import uuid
+    custom_msg_id = f"<{uuid.uuid4()}@mail.outreach.praroop.site>"
     msg = MIMEMultipart("mixed")
     msg["From"] = f"Praroop Anand <{settings.GMAIL_USER}>"
     msg["To"] = lead.email
     msg["Subject"] = subject
+    msg["Message-ID"] = custom_msg_id
 
     # Alternative container for plain text + html
     alt_container = MIMEMultipart("alternative")
@@ -172,6 +180,7 @@ def send_email_to_lead(
     # Record message log
     email_msg = EmailMessage(
         lead_id=lead.id,
+        message_id=custom_msg_id,
         direction=EmailDirection.SENT.value,
         sender=settings.GMAIL_USER,
         recipient=lead.email,

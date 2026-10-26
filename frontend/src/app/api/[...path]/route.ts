@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
+const isDev = process.env.NODE_ENV !== "production";
 const BACKEND_URL = (
-  process.env.BACKEND_URL || "https://outreach-engine-h5lx.onrender.com"
+  process.env.BACKEND_URL || (isDev ? "http://localhost:8437" : "https://outreach-engine-h5lx.onrender.com")
 ).replace(/\/$/, "");
 
 async function handleProxy(

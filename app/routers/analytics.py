@@ -16,31 +16,25 @@ def get_analytics_overview(session: Session = Depends(get_session)) -> Dict[str,
         return cached
     total_leads = session.exec(select(func.count(Lead.id))).one() or 0
     
-    # Status breakdown
-    contacted_count = session.exec(
-        select(func.count(Lead.id)).where(
-            Lead.status.in_([
-                LeadStatus.CONTACTED.value,
-                LeadStatus.FOLLOWED_UP.value,
-                LeadStatus.REPLIED.value,
-                LeadStatus.INTERESTED.value
-            ])
-        )
-    ).one() or 0
-    
-    replied_count = session.exec(
-        select(func.count(Lead.id)).where(
-            Lead.status.in_([LeadStatus.REPLIED.value, LeadStatus.INTERESTED.value])
-        )
-    ).one() or 0
-    
-    not_contacted_count = session.exec(
-        select(func.count(Lead.id)).where(Lead.status == LeadStatus.NOT_CONTACTED.value)
-    ).one() or 0
-    
-    interested_count = session.exec(
-        select(func.count(Lead.id)).where(Lead.status == LeadStatus.INTERESTED.value)
-    ).one() or 0
+    # Aggregate status counts with a single group-by query for maximum speed
+    status_counts_rows = session.exec(select(Lead.status, func.count(Lead.id)).group_by(Lead.status)).all()
+    status_map = {row[0]: row[1] for row in status_counts_rows}
+
+    contacted_count = (
+        status_map.get(LeadStatus.CONTACTED.value, 0) +
+        status_map.get(LeadStatus.FOLLOWED_UP.value, 0) +
+        status_map.get(LeadStatus.REPLIED.value, 0) +
+        status_map.get(LeadStatus.INTERESTED.value, 0) +
+        status_map.get(LeadStatus.DMED.value, 0)
+    )
+    replied_count = status_map.get(LeadStatus.REPLIED.value, 0) + status_map.get(LeadStatus.INTERESTED.value, 0)
+    not_contacted_count = status_map.get(LeadStatus.NOT_CONTACTED.value, 0)
+    interested_count = status_map.get(LeadStatus.INTERESTED.value, 0)
+    bounced_count = status_map.get(LeadStatus.BOUNCED.value, 0) + status_map.get(LeadStatus.INVALID_EMAIL.value, 0)
+    dmed_count = status_map.get(LeadStatus.DMED.value, 0)
+    dm_staged_count = status_map.get(LeadStatus.DM_STAGED.value, 0)
+    dm_closed_count = status_map.get(LeadStatus.DM_CLOSED.value, 0)
+    pending_dm_count = status_map.get(LeadStatus.PENDING_DM.value, 0)
 
     # Total sent messages
     total_sent_emails = session.exec(
@@ -69,11 +63,6 @@ def get_analytics_overview(session: Session = Depends(get_session)) -> Dict[str,
         )
     ).one() or 0
 
-    # Total bounced
-    bounced_count = session.exec(
-        select(func.count(Lead.id)).where(Lead.status.in_([LeadStatus.BOUNCED.value, LeadStatus.INVALID_EMAIL.value]))
-    ).one() or 0
-
     res = {
         "total_leads": total_leads,
         "contacted_count": contacted_count,
@@ -81,6 +70,10 @@ def get_analytics_overview(session: Session = Depends(get_session)) -> Dict[str,
         "replied_count": replied_count,
         "interested_count": interested_count,
         "bounced_count": bounced_count,
+        "dmed_count": dmed_count,
+        "dm_staged_count": dm_staged_count,
+        "dm_closed_count": dm_closed_count,
+        "pending_dm_count": pending_dm_count,
         "follow_up_needed": follow_up_needed,
         "total_sent_emails": total_sent_emails,
         "total_received_emails": total_received_emails,

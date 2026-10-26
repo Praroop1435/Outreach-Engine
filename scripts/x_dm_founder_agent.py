@@ -190,7 +190,14 @@ def process_founder_dms(batch_size: int = 10, auto_send: bool = True):
 
                 const readOnlyNotice = sr.querySelector("[data-testid='dm-read-only-notice']");
                 const bodyText = sr.textContent || "";
-                const isReadOnly = !!readOnlyNotice || bodyText.includes("read-only mode") || bodyText.includes("You can't message this account");
+                const isReadOnly = (
+                    !!readOnlyNotice ||
+                    bodyText.includes("read-only mode") ||
+                    bodyText.includes("You can't message this account") ||
+                    bodyText.includes("has a closed inbox") ||
+                    bodyText.includes("closed inbox") ||
+                    bodyText.includes("Use X Number")
+                );
                 const textarea = sr.querySelector("[data-testid='dm-composer-textarea']");
 
                 return JSON.stringify({

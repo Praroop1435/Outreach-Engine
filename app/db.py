@@ -1,4 +1,4 @@
-from sqlmodel import SQLModel, create_engine, Session, select
+from sqlmodel import SQLModel, create_engine, Session, select, func
 from app.config import settings
 from app.models import EmailTemplate
 
@@ -31,11 +31,10 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
 def init_db():
     SQLModel.metadata.create_all(engine)
     with Session(engine) as session:
-        # Clear old templates first and commit
-        old_templates = session.exec(select(EmailTemplate)).all()
-        for ot in old_templates:
-            session.delete(ot)
-        session.commit()
+        # Preserve user-created templates: only seed defaults if table is empty
+        existing_count = session.exec(select(func.count(EmailTemplate.id))).one() or 0
+        if existing_count > 0:
+            return
 
         curated_templates = [
             EmailTemplate(

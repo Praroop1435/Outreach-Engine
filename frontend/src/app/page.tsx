@@ -40,6 +40,11 @@ import {
   Share2
 } from 'lucide-react';
 
+import TemplatesStudioView from '@/components/views/TemplatesStudioView';
+import ClicksTrackingView from '@/components/views/ClicksTrackingView';
+import InboxRepliesView from '@/components/views/InboxRepliesView';
+import SystemSettingsView from '@/components/views/SystemSettingsView';
+
 interface ProspectReply {
   id: number;
   lead_id?: number;
@@ -139,12 +144,39 @@ interface ResumeStatus {
 
 const BACKEND_BASE = (process.env.NEXT_PUBLIC_BACKEND_URL || "https://outreach-engine-h5lx.onrender.com").replace(/\/$/, "");
 
-// Same-Origin API Fetch Helper (Prevents Brave Shield / Safari cross-site CORS blocks)
+export type SidebarTab = 'pipeline' | 'founder_dms' | 'templates' | 'clicks' | 'inbox' | 'settings';
+
+// Resilient API Fetch Helper: Calls Render directly in production with Vercel proxy fallback
 async function apiFetch(endpoint: string, options?: RequestInit): Promise<Response> {
-  const url = endpoint.startsWith('http')
-    ? endpoint
-    : (endpoint.startsWith('/') ? endpoint : `/${endpoint}`);
-  return fetch(url, options);
+  const isBrowser = typeof window !== 'undefined';
+  const isLocalhost = isBrowser && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+  
+  let targetUrl = endpoint;
+  if (!targetUrl.startsWith('http')) {
+    const cleanPath = targetUrl.startsWith('/') ? targetUrl : `/${targetUrl}`;
+    // Prefer direct backend call in production browser to bypass Vercel Hobby 10s serverless timeout
+    if (isBrowser && !isLocalhost) {
+      targetUrl = `${BACKEND_BASE}${cleanPath}`;
+    } else {
+      targetUrl = cleanPath;
+    }
+  }
+
+  try {
+    const res = await fetch(targetUrl, options);
+    // If direct render call fails (e.g. adblocker), fallback to proxy
+    if (!res.ok && targetUrl.startsWith(BACKEND_BASE)) {
+      const fallbackUrl = targetUrl.replace(BACKEND_BASE, '');
+      return await fetch(fallbackUrl, options);
+    }
+    return res;
+  } catch (err) {
+    if (targetUrl.startsWith(BACKEND_BASE)) {
+      const fallbackUrl = targetUrl.replace(BACKEND_BASE, '');
+      return await fetch(fallbackUrl, options);
+    }
+    throw err;
+  }
 }
 
 export default function OutreachEngineDashboard() {
@@ -179,10 +211,28 @@ export default function OutreachEngineDashboard() {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Sidebar Navigation State
-  const [activeSidebarNav, setActiveSidebarNav] = useState<'pipeline' | 'founder_dms'>('pipeline');
+  // Sidebar Navigation State (6 full dedicated page views)
+  const [activeSidebarNav, setActiveSidebarNav] = useState<SidebarTab>('pipeline');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [founderStatusFilter, setFounderStatusFilter] = useState('ALL');
+
+  const handleNavChange = (tab: SidebarTab) => {
+    setActiveSidebarNav(tab);
+    setIsMobileSidebarOpen(false);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', tab);
+      window.history.pushState(null, '', url.toString());
+    } catch (_) {}
+
+    if (tab === 'clicks') {
+      openClicksModal(null);
+    } else if (tab === 'inbox') {
+      apiFetch('/api/analytics/replies').then(res => res.json()).then(data => {
+        if (Array.isArray(data)) setReplies(data);
+      }).catch(() => {});
+    }
+  };
 
   // Drawers and Modals
   const [activeDrawerLead, setActiveDrawerLead] = useState<Lead | null>(null);
@@ -418,6 +468,14 @@ export default function OutreachEngineDashboard() {
   };
 
   useEffect(() => {
+    // 0. Restore tab from URL search param if present
+    try {
+      const urlTab = new URLSearchParams(window.location.search).get('tab') as SidebarTab | null;
+      if (urlTab && ['pipeline', 'founder_dms', 'templates', 'clicks', 'inbox', 'settings'].includes(urlTab)) {
+        setActiveSidebarNav(urlTab);
+      }
+    } catch (_) {}
+
     // 1. Instant render from localStorage cache
     try {
       const cachedLeads = localStorage.getItem('cached_outreach_leads');
@@ -521,6 +579,41 @@ export default function OutreachEngineDashboard() {
       );
     }
     setIsComposeModalOpen(true);
+  };
+
+  const openComposeByLeadId = async (leadId: number) => {
+    const lead = leads.find(l => l.id === leadId);
+    if (lead) {
+      openCompose(lead);
+    } else {
+      try {
+        const res = await apiFetch(`/api/leads/${leadId}`);
+        if (res.ok) {
+          const lData = await res.json();
+          openCompose(lData);
+        }
+      } catch (_) {}
+    }
+  };
+
+  const handleUpdateLeadStatus = async (leadId: number, newStatus: string) => {
+    try {
+      const res = await apiFetch(`/api/leads/${leadId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      });
+      if (!res.ok) throw new Error('Failed to update status');
+      setLeads(prev => {
+        const updated = prev.map(l => l.id === leadId ? { ...l, status: newStatus } : l);
+        try { localStorage.setItem('cached_outreach_leads', JSON.stringify(updated)); } catch (_) {}
+        return updated;
+      });
+      showToast(`Lead status updated to ${newStatus}`);
+      fetchData();
+    } catch (e: any) {
+      showToast(e.message, 'error');
+    }
   };
 
   const applyTemplateText = (tpl: Template, lead: Lead) => {
@@ -904,9 +997,10 @@ export default function OutreachEngineDashboard() {
               </div>
 
               <nav className="space-y-1">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 mb-1">Workspace</div>
                 <button
                   type="button"
-                  onClick={() => { setActiveSidebarNav('pipeline'); setIsMobileSidebarOpen(false); }}
+                  onClick={() => handleNavChange('pipeline')}
                   className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition ${
                     activeSidebarNav === 'pipeline' ? 'bg-sky-50 text-sky-800 border border-sky-200' : 'text-slate-600'
                   }`}
@@ -922,7 +1016,7 @@ export default function OutreachEngineDashboard() {
 
                 <button
                   type="button"
-                  onClick={() => { setActiveSidebarNav('founder_dms'); setIsMobileSidebarOpen(false); }}
+                  onClick={() => handleNavChange('founder_dms')}
                   className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition ${
                     activeSidebarNav === 'founder_dms' ? 'bg-purple-50 text-purple-800 border border-purple-200' : 'text-slate-600'
                   }`}
@@ -933,6 +1027,76 @@ export default function OutreachEngineDashboard() {
                   </div>
                   <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-purple-100 text-purple-800 font-bold">
                     {founderLeads.length}
+                  </span>
+                </button>
+
+                <div className="pt-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 mb-1">Tools & Pages</div>
+
+                <button
+                  type="button"
+                  onClick={() => handleNavChange('templates')}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition ${
+                    activeSidebarNav === 'templates' ? 'bg-amber-50 text-amber-900 border border-amber-200' : 'text-slate-600'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Layers className="w-4 h-4 text-amber-600" />
+                    <span>Templates Studio</span>
+                  </div>
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-900">
+                    {templates.length}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleNavChange('clicks')}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition ${
+                    activeSidebarNav === 'clicks' ? 'bg-cyan-50 text-cyan-900 border border-cyan-200' : 'text-slate-600'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <MousePointerClick className="w-4 h-4 text-cyan-600" />
+                    <span>Link Clicks / UTM</span>
+                  </div>
+                  {analytics.total_link_clicks > 0 && (
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-cyan-100 text-cyan-800 font-bold">
+                      {analytics.total_link_clicks}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleNavChange('inbox')}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition ${
+                    activeSidebarNav === 'inbox' ? 'bg-rose-50 text-rose-900 border border-rose-200' : 'text-slate-600'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Inbox className="w-4 h-4 text-rose-600" />
+                    <span>Inbox Replies</span>
+                  </div>
+                  {replies.length > 0 && (
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-rose-500 text-white font-bold">
+                      {replies.length}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleNavChange('settings')}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition ${
+                    activeSidebarNav === 'settings' ? 'bg-emerald-50 text-emerald-900 border border-emerald-200' : 'text-slate-600'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Activity className="w-4 h-4 text-emerald-600" />
+                    <span>System & Sync</span>
+                  </div>
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-800">
+                    Live
                   </span>
                 </button>
               </nav>
@@ -977,7 +1141,7 @@ export default function OutreachEngineDashboard() {
             
             <button
               type="button"
-              onClick={() => setActiveSidebarNav('pipeline')}
+              onClick={() => handleNavChange('pipeline')}
               className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition ${
                 activeSidebarNav === 'pipeline'
                   ? 'bg-sky-50 text-sky-800 border border-sky-200 shadow-2xs'
@@ -995,7 +1159,7 @@ export default function OutreachEngineDashboard() {
 
             <button
               type="button"
-              onClick={() => setActiveSidebarNav('founder_dms')}
+              onClick={() => handleNavChange('founder_dms')}
               className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition ${
                 activeSidebarNav === 'founder_dms'
                   ? 'bg-purple-50 text-purple-900 border border-purple-200 shadow-2xs'
@@ -1011,24 +1175,37 @@ export default function OutreachEngineDashboard() {
               </span>
             </button>
 
-            <div className="pt-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 mb-2">Tools &amp; Logs</div>
+            <div className="pt-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 mb-2">Tools &amp; Pages</div>
 
             <button
               type="button"
-              onClick={() => openTemplateBuilder()}
-              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition"
+              onClick={() => handleNavChange('templates')}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition ${
+                activeSidebarNav === 'templates'
+                  ? 'bg-amber-50 text-amber-900 border border-amber-200 shadow-2xs'
+                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+              }`}
             >
-              <Layers className="w-4 h-4 text-slate-400" />
-              <span>Templates Studio</span>
+              <div className="flex items-center gap-2.5">
+                <Layers className={`w-4 h-4 ${activeSidebarNav === 'templates' ? 'text-amber-600' : 'text-slate-400'}`} />
+                <span>Templates Studio</span>
+              </div>
+              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-900">
+                {templates.length}
+              </span>
             </button>
 
             <button
               type="button"
-              onClick={() => openClicksModal(null)}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition"
+              onClick={() => handleNavChange('clicks')}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition ${
+                activeSidebarNav === 'clicks'
+                  ? 'bg-cyan-50 text-cyan-900 border border-cyan-200 shadow-2xs'
+                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+              }`}
             >
               <div className="flex items-center gap-2.5">
-                <MousePointerClick className="w-4 h-4 text-slate-400" />
+                <MousePointerClick className={`w-4 h-4 ${activeSidebarNav === 'clicks' ? 'text-cyan-600' : 'text-slate-400'}`} />
                 <span>Link Clicks / UTM</span>
               </div>
               {analytics.total_link_clicks > 0 && (
@@ -1040,11 +1217,15 @@ export default function OutreachEngineDashboard() {
 
             <button
               type="button"
-              onClick={() => setIsRepliesModalOpen(true)}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition"
+              onClick={() => handleNavChange('inbox')}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition ${
+                activeSidebarNav === 'inbox'
+                  ? 'bg-rose-50 text-rose-900 border border-rose-200 shadow-2xs'
+                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+              }`}
             >
               <div className="flex items-center gap-2.5">
-                <Inbox className="w-4 h-4 text-slate-400" />
+                <Inbox className={`w-4 h-4 ${activeSidebarNav === 'inbox' ? 'text-rose-600' : 'text-slate-400'}`} />
                 <span>Inbox Replies</span>
               </div>
               {replies.length > 0 && (
@@ -1056,12 +1237,20 @@ export default function OutreachEngineDashboard() {
 
             <button
               type="button"
-              onClick={handleManualSyncMailbox}
-              disabled={isSyncingMailbox}
-              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition disabled:opacity-60"
+              onClick={() => handleNavChange('settings')}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition ${
+                activeSidebarNav === 'settings'
+                  ? 'bg-emerald-50 text-emerald-900 border border-emerald-200 shadow-2xs'
+                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+              }`}
             >
-              <RefreshCw className={`w-4 h-4 text-slate-400 ${isSyncingMailbox ? 'animate-spin text-sky-600' : ''}`} />
-              <span>{isSyncingMailbox ? 'Syncing...' : 'Sync Mailbox'}</span>
+              <div className="flex items-center gap-2.5">
+                <Activity className={`w-4 h-4 ${activeSidebarNav === 'settings' ? 'text-emerald-600' : 'text-slate-400'}`} />
+                <span>System &amp; Sync</span>
+              </div>
+              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-800">
+                Live
+              </span>
             </button>
           </nav>
         </div>
@@ -1109,12 +1298,20 @@ export default function OutreachEngineDashboard() {
         <header className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h2 className="text-lg font-bold text-slate-950 tracking-tight">
-              {activeSidebarNav === 'founder_dms' ? 'Founder X DMs Directory' : 'Outreach Pipeline'}
+              {activeSidebarNav === 'founder_dms' && 'Founder X DMs Directory'}
+              {activeSidebarNav === 'pipeline' && 'Outreach Pipeline'}
+              {activeSidebarNav === 'templates' && 'Templates Studio'}
+              {activeSidebarNav === 'clicks' && 'Link Clicks & UTM Attribution'}
+              {activeSidebarNav === 'inbox' && 'Inbound Mailbox & Replies'}
+              {activeSidebarNav === 'settings' && 'System Infrastructure & Mailbox Sync'}
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              {activeSidebarNav === 'founder_dms'
-                ? '1,500+ funded startups with verified X handles and human pitch generators'
-                : 'Cold outreach email pipeline, replies, bounces, and link click attribution'}
+              {activeSidebarNav === 'founder_dms' && '1,500+ funded startups with verified X handles and human pitch generators'}
+              {activeSidebarNav === 'pipeline' && 'Cold outreach email pipeline, replies, bounces, and link click attribution'}
+              {activeSidebarNav === 'templates' && 'Manage high-converting cold email and X DM pitch templates with zero em dashes'}
+              {activeSidebarNav === 'clicks' && 'Real-time telemetry and attribution for portfolio and Loom demos'}
+              {activeSidebarNav === 'inbox' && 'Detected replies and bounces automatically synced via IMAP SSL'}
+              {activeSidebarNav === 'settings' && 'Live monitoring of Neon DB, Gmail IMAP/SMTP services, and background keep-alive'}
             </p>
           </div>
 
@@ -1149,7 +1346,53 @@ export default function OutreachEngineDashboard() {
             </button>
           </div>
         </header>
-        {activeSidebarNav === 'founder_dms' ? (
+
+        {/* Dedicated View Routing */}
+        {activeSidebarNav === 'templates' && (
+          <TemplatesStudioView
+            templates={templates}
+            fetchData={fetchData}
+            showToast={showToast}
+            apiFetch={apiFetch}
+          />
+        )}
+
+        {activeSidebarNav === 'clicks' && (
+          <ClicksTrackingView
+            clicks={clicksData}
+            isLoading={isLoadingClicks}
+            onRefresh={() => openClicksModal(null)}
+            openLeadDrawer={openLeadDrawer}
+            showToast={showToast}
+          />
+        )}
+
+        {activeSidebarNav === 'inbox' && (
+          <InboxRepliesView
+            replies={replies}
+            isSyncing={isSyncingMailbox}
+            onSyncMailbox={handleManualSyncMailbox}
+            openLeadDrawer={openLeadDrawer}
+            openComposeByLeadId={openComposeByLeadId}
+            onUpdateLeadStatus={handleUpdateLeadStatus}
+            showToast={showToast}
+          />
+        )}
+
+        {activeSidebarNav === 'settings' && (
+          <SystemSettingsView
+            resumeStatus={resumeStatus}
+            onUploadResume={handleResumeUpload}
+            fileInputRef={fileInputRef}
+            isSyncingMailbox={isSyncingMailbox}
+            onSyncMailbox={handleManualSyncMailbox}
+            showToast={showToast}
+            fetchData={fetchData}
+            apiFetch={apiFetch}
+          />
+        )}
+
+        {activeSidebarNav === 'founder_dms' && (
           <div className="space-y-6">
             {/* Founder KPI Cards */}
             <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1368,7 +1611,9 @@ export default function OutreachEngineDashboard() {
               </div>
             </div>
           </div>
-        ) : (
+        )}
+
+        {activeSidebarNav === 'pipeline' && (
           <div className="space-y-6">
 
         {/* Interactive KPI Metrics Grid */}

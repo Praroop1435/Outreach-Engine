@@ -1,0 +1,23 @@
+name: 24/7 Render Keep-Alive & Mailbox Cron
+
+on:
+  schedule:
+    # Runs every 5 minutes 24/7 from GitHub Cloud
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Render Backend Health
+        run: |
+          echo "Pinging Render backend health..."
+          curl -sS -m 30 -w "\nHTTP Status: %{http_code} | Total Time: %{time_total}s\n" \
+            https://outreach-engine-h5lx.onrender.com/health || true
+
+      - name: Trigger IMAP Mailbox Sync Cron
+        run: |
+          echo "Triggering inbox & bounce sync..."
+          curl -sS -m 60 -w "\nHTTP Status: %{http_code} | Total Time: %{time_total}s\n" \
+            https://outreach-engine-h5lx.onrender.com/api/sync/cron || true

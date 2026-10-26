@@ -140,7 +140,9 @@ def sync_mailbox(session: Session, max_messages: int = 150, auto_create_leads: b
             time.sleep(2)
 
     try:
-
+        # Pre-load known lead emails for instant O(1) in-memory matching
+        known_leads = {e.lower().strip() for e in session.exec(select(Lead.email)).all() if e}
+        
         # -------------------------------------------------------------
         # 1. Sync Sent Mail
         # -------------------------------------------------------------
@@ -151,8 +153,8 @@ def sync_mailbox(session: Session, max_messages: int = 150, auto_create_leads: b
                 msg_ids = response[0].split()
                 target_ids = msg_ids[-max_messages:] if len(msg_ids) > max_messages else msg_ids
 
-                # Process in chunks of 30 for fast batch fetching
-                chunk_size = 30
+                # Process in chunks of 20 for fast batch fetching
+                chunk_size = 20
                 for i in range(0, len(target_ids), chunk_size):
                     chunk = target_ids[i:i + chunk_size]
                     id_query = b",".join(chunk)
@@ -186,6 +188,10 @@ def sync_mailbox(session: Session, max_messages: int = 150, auto_create_leads: b
 
                         body = extract_body(msg)
                         snippet = body[:200].strip() if body else subject
+
+                        # Fast in-memory filter
+                        if recipient_email not in known_leads and not auto_create_leads:
+                            continue
 
                         # Check if lead exists
                         lead = session.exec(select(Lead).where(Lead.email == recipient_email)).first()
