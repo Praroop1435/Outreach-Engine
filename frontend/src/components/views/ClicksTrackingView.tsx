@@ -81,7 +81,7 @@ export default function ClicksTrackingView({ clicks, isLoading, onRefresh, openL
           <EmptyState
             icon={<MousePointerClick className="h-5 w-5" />}
             title="No clicks recorded"
-            description="Click tracking is off by default because redirect links hurt inbox placement. Turn it on per email in the compose window if you want to measure a batch."
+            description="Every link you send carries UTM tags, so portfolio visits show up in your site analytics (Clarity) by company. Clicks only appear here for emails sent with click logging on."
           />
         ) : (
           <ul className="stagger divide-y divide-slate-100">

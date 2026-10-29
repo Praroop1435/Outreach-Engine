@@ -1,6 +1,5 @@
 import base64
 import json
-import urllib.parse
 from datetime import datetime
 from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import RedirectResponse
@@ -8,6 +7,7 @@ from sqlmodel import Session, select
 
 from app.db import get_session
 from app.models import Lead, LinkClick, LeadStatus
+from app.services.utm import slugify
 
 router = APIRouter(prefix="/api/t", tags=["Tracking"])
 
@@ -23,32 +23,9 @@ def decode_tracking_token(token: str) -> dict:
         return {}
 
 def append_utm_params(url: str, lead: Lead) -> str:
-    parsed = urllib.parse.urlparse(url)
-    company_slug = (lead.company or "prospect").lower().replace(" ", "_")
-    name_slug = (lead.first_name or "contact").lower().replace(" ", "_")
-    
-    utm_params = {
-        "utm_source": "outreach",
-        "utm_medium": "email",
-        "utm_campaign": f"outreach_{company_slug}",
-        "utm_content": name_slug,
-        "ref": f"po_{lead.id}"
-    }
-
-    query_dict = dict(urllib.parse.parse_qsl(parsed.query))
-    for k, v in utm_params.items():
-        if k not in query_dict:
-            query_dict[k] = v
-
-    new_query = urllib.parse.urlencode(query_dict)
-    return urllib.parse.urlunparse((
-        parsed.scheme,
-        parsed.netloc,
-        parsed.path,
-        parsed.params,
-        new_query,
-        parsed.fragment
-    ))
+    # Links are tagged when the email is built; this only fills gaps for older tokens
+    from app.services.utm import add_utm, lead_utm
+    return add_utm(url, **lead_utm(lead))
 
 @router.get("/click/{token}")
 def handle_link_click(token: str, request: Request, session: Session = Depends(get_session)):
@@ -73,8 +50,8 @@ def handle_link_click(token: str, request: Request, session: Session = Depends(g
             lead_id=lead_id,
             target_url=target_url,
             utm_source="outreach",
-            utm_campaign=f"outreach_{(lead.company or 'prospect').lower()}" if lead else "outreach",
-            utm_content=(lead.first_name or "").lower() if lead else None,
+            utm_campaign=slugify(lead.company) if lead else "outreach",
+            utm_content=f"lead_{lead.id}" if lead else None,
             ip_address=client_ip,
             user_agent=user_agent,
             clicked_at=datetime.utcnow()

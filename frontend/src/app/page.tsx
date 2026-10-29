@@ -44,6 +44,7 @@ import TemplatesStudioView from '@/components/views/TemplatesStudioView';
 import { SidebarContent } from '@/components/shell/Sidebar';
 import { Drawer, Modal, useLastDefined } from '@/components/ui/overlay';
 import { formatRelative } from '@/lib/format';
+import { tagLinks } from '@/lib/utm';
 import { AnimatedNumber, Avatar, EmptyState, SegmentedTabs, SkeletonRows, StatusBadge, Toaster, useToasts } from '@/components/ui/primitives';
 import ClicksTrackingView from '@/components/views/ClicksTrackingView';
 import InboxRepliesView from '@/components/views/InboxRepliesView';
@@ -430,8 +431,9 @@ export default function OutreachEngineDashboard() {
     const msg = `Hey ${fn}, been following ${comp}.\n\n` +
       `I'm an AI engineer at Relu Consultancy, shipping production RAG, agent and backend systems for clients. Here's a short Loom of one I built for a US insurance agency:\n` +
       `https://www.loom.com/share/5f715f784c3142e690f16f8df66f3799\n\n` +
-      `I'm looking for a remote AI or backend role. Open to a quick call? Happy to start with a small paid trial.`;
-    navigator.clipboard.writeText(msg);
+      `I'm looking for a remote AI or backend role. Open to a quick call? Happy to start with a small paid trial.\n` +
+      `https://praroop.site`;
+    navigator.clipboard.writeText(tagLinks(msg, lead.company, `lead_${lead.id}`, 'x_dm'));
     showToast(`Pitch for ${lead.first_name || 'Founder'} copied to clipboard!`);
   };
 
@@ -1378,8 +1380,8 @@ export default function OutreachEngineDashboard() {
             <Switch
               checked={enableUTMTracking}
               onChange={setEnableUTMTracking}
-              label="Track link clicks"
-              hint="Routes links through a redirect, which can push emails to spam."
+              label="Log clicks in dashboard"
+              hint="Links always carry UTM tags. This also logs each click here, but routes links through a redirect that can push emails to spam."
             />
           </div>
         </div>

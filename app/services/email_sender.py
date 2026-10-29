@@ -1,7 +1,7 @@
 import smtplib
 import os
+import html
 import re
-import urllib.parse
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
@@ -11,8 +11,6 @@ from sqlmodel import Session, select
 
 from app.config import settings
 from app.models import Lead, EmailMessage, LeadStatus, EmailDirection
-
-URL_REGEX = re.compile(r"(https?://[^\s<>\"'\)]+)", re.IGNORECASE)
 
 JUNK_HOOK_REGEX = re.compile(r"https?://|linkedin\.com|^what you are building at", re.IGNORECASE)
 
@@ -45,58 +43,29 @@ def render_template(template_str: str, lead: Lead) -> str:
         rendered = pattern.sub(str(value or ""), rendered)
     return rendered
 
-def build_utm_url(url: str, lead: Lead) -> str:
-    """Appends UTM campaign parameters disguised behind clean links."""
-    parsed = urllib.parse.urlparse(url)
-    company_slug = (lead.company or "prospect").lower().replace(" ", "_")
-    name_slug = (lead.first_name or "contact").lower().replace(" ", "_")
-    
-    utm_params = {
-        "utm_source": "outreach",
-        "utm_medium": "email",
-        "utm_campaign": f"outreach_{company_slug}",
-        "utm_content": name_slug,
-        "ref": f"po_{lead.id or 0}"
-    }
-
-    query_dict = dict(urllib.parse.parse_qsl(parsed.query))
-    for k, v in utm_params.items():
-        if k not in query_dict:
-            query_dict[k] = v
-
-    new_query = urllib.parse.urlencode(query_dict)
-    return urllib.parse.urlunparse((
-        parsed.scheme,
-        parsed.netloc,
-        parsed.path,
-        parsed.params,
-        new_query,
-        parsed.fragment
-    ))
-
 from app.routers.tracking import encode_tracking_token
+from app.services.utm import URL_REGEX, add_utm, lead_utm, split_trailing_punct, tag_links
 
-def generate_html_body_with_utm(body_text: str, lead: Lead, enable_utm: bool = True) -> str:
-    """Converts plain text body to clean HTML with tracked redirect tokens in anchor hrefs."""
-    escaped_lines = []
+def generate_html_body_with_utm(body_text: str, lead: Lead, enable_utm: bool = False) -> str:
+    """Converts plain text to HTML. Every link gets UTM params on its real destination;
+    with enable_utm (click tracking) the href goes through the redirect logger instead."""
+    utm = lead_utm(lead)
     base_tracking_url = getattr(settings, "TRACKING_BASE_URL", "https://outreach-engine-h5lx.onrender.com").rstrip("/")
+    html_lines = []
     for line in body_text.split("\n"):
-        def replace_url(match):
-            raw_url = match.group(1).rstrip(".,;")
-            trailing_punct = match.group(1)[len(raw_url):]
+        parts, last = [], 0
+        for match in URL_REGEX.finditer(line):
+            raw_url, trailing = split_trailing_punct(match.group(1))
+            href = add_utm(raw_url, **utm)
             if enable_utm and lead.id:
-                token = encode_tracking_token(lead.id, raw_url)
-                tracked_url = f"{base_tracking_url}/api/t/click/{token}"
-            elif enable_utm:
-                tracked_url = build_utm_url(raw_url, lead)
-            else:
-                tracked_url = raw_url
-            return f'<a href="{tracked_url}" style="color: #111827; text-decoration: underline;" target="_blank">{raw_url}</a>{trailing_punct}'
+                href = f"{base_tracking_url}/api/t/click/{encode_tracking_token(lead.id, href)}"
+            parts.append(html.escape(line[last:match.start()]))
+            parts.append(f'<a href="{html.escape(href, quote=True)}" style="color: #111827; text-decoration: underline;" target="_blank">{html.escape(raw_url)}</a>{html.escape(trailing)}')
+            last = match.end()
+        parts.append(html.escape(line[last:]))
+        html_lines.append("".join(parts))
 
-        transformed_line = URL_REGEX.sub(replace_url, line)
-        escaped_lines.append(transformed_line)
-
-    html_content = "<br>".join(escaped_lines)
+    html_content = "<br>".join(html_lines)
     return f"""<div style='font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 14px; line-height: 1.6; color: #111827;'>
 {html_content}
 </div>"""
@@ -143,7 +112,7 @@ def send_email_to_lead(
 
     # Alternative container for plain text + html
     alt_container = MIMEMultipart("alternative")
-    text_part = MIMEText(body, "plain", "utf-8")
+    text_part = MIMEText(tag_links(body, **lead_utm(lead)), "plain", "utf-8")
     html_body = generate_html_body_with_utm(body, lead, enable_utm=enable_utm_tracking)
     html_part = MIMEText(html_body, "html", "utf-8")
     

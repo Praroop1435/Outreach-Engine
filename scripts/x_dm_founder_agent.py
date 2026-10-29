@@ -12,29 +12,31 @@ from app.db import engine
 from app.models import Lead, EmailMessage, MessageChannel, EmailDirection
 from app.cache import app_cache
 
+from app.services.utm import tag_links
+
 # Candidate links and portfolio
-PORTFOLIO_URL = "praroop.site"
+PORTFOLIO_URL = "https://praroop.site"
 LOOM_URL = "https://www.loom.com/share/5f715f784c3142e690f16f8df66f3799"
 
-def generate_human_dm(founder_name: str, company: str, hook: str = "") -> str:
+def generate_human_dm(founder_name: str, company: str, hook: str = "", lead_id: int | None = None) -> str:
     first_name = founder_name.split()[0] if founder_name else "there"
-    
-    # Custom tailored message strictly without em dashes, en dashes, or spaced hyphens
+
     message = (
-        f"Hey {first_name}, saw what you are building at {company}!\n\n"
-        f"I build production AI agent workflows and scalable backend systems (FastAPI, Next.js, PostgreSQL, Redis, Docker). "
-        f"At Relu Consultancy, I ship client AI systems ranging from pgvector RAG engines to autonomous async task queues.\n\n"
-        f"Dropped a quick Loom demo of an enterprise intelligence platform I built, plus my portfolio:\n"
-        f"Loom: {LOOM_URL}\n"
-        f"Portfolio: {PORTFOLIO_URL}\n\n"
-        f"Would love to chat or build out a proof of concept if you have an active engineering backlog!"
+        f"Hey {first_name}, been following {company}.\n\n"
+        f"I'm an AI engineer at Relu Consultancy, shipping production RAG, agent and backend systems for clients. "
+        f"Here's a short Loom of one I built for a US insurance agency:\n"
+        f"{LOOM_URL}\n\n"
+        f"I'm looking for a remote AI or backend role. Open to a quick call? Happy to start with a small paid trial.\n"
+        f"{PORTFOLIO_URL}"
     )
-    
+    # Every link carries UTM so portfolio visits can be traced back to the DM
+    message = tag_links(message, campaign=company, content=f"lead_{lead_id}" if lead_id else None, medium="x_dm")
+
     # Strict validation: zero dashes
     assert "\u2014" not in message, "Forbidden em dash found"
     assert "\u2013" not in message, "Forbidden en dash found"
     assert " - " not in message, "Forbidden spaced hyphen found"
-    
+
     return message
 
 def execute_js_in_brave(js_code: str) -> str:
@@ -239,7 +241,7 @@ def process_founder_dms(batch_size: int = None, auto_send: bool = True):
 
             # 5. DM is OPEN and WRITABLE!
             print(f"  🔓 DM is fully OPEN and WRITABLE for @{handle}!")
-            dm_text = generate_human_dm(founder_name, company, lead.custom_hook or "")
+            dm_text = generate_human_dm(founder_name, company, lead.custom_hook or "", lead_id=lead.id)
             print(f"  📝 Message:\n{'-'*40}\n{dm_text}\n{'-'*40}")
 
             if auto_send:
