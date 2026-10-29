@@ -115,6 +115,10 @@
   }
   .btn-ghost { @apply text-slate-500 hover:bg-slate-100 hover:text-slate-900; }
   .btn-danger { @apply text-rose-600 hover:bg-rose-50 hover:text-rose-700; }
+  .btn-destructive {
+    @apply bg-rose-600 text-white hover:bg-rose-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-rose-500/20;
+    box-shadow: 0 1px 2px rgb(225 29 72 / 0.25), 0 4px 12px -4px rgb(225 29 72 / 0.35);
+  }
 
   .input {
     @apply w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-900

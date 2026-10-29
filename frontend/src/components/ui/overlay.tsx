@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from 'react';
-import { X } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { AlertTriangle, X } from 'lucide-react';
 
 const EXIT_MS = 220;
 
@@ -111,6 +111,96 @@ export function Modal({ open, onClose, title, description, icon, headerActions, 
       </div>
     </div>
   );
+}
+
+export interface ConfirmOptions {
+  title: React.ReactNode;
+  description?: React.ReactNode;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  tone?: 'danger' | 'default';
+}
+
+interface ConfirmDialogProps extends ConfirmOptions {
+  open: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}
+
+export function ConfirmDialog({ open, onConfirm, onCancel, title, description, confirmLabel = 'Confirm', cancelLabel = 'Cancel', tone = 'default' }: ConfirmDialogProps) {
+  const { mounted, visible } = usePresence(open, 180);
+  const confirmRef = useRef<HTMLButtonElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  useOverlayBehaviour(open, onCancel);
+
+  const danger = tone === 'danger';
+
+  // Destructive actions start on Cancel so a stray Enter can't delete anything
+  useEffect(() => {
+    if (open) (danger ? cancelRef : confirmRef).current?.focus();
+  }, [open, mounted, danger]);
+
+  if (!mounted) return null;
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
+      <div
+        onClick={onCancel}
+        className={`absolute inset-0 bg-slate-950/30 backdrop-blur-[3px] transition-opacity duration-150 ${visible ? 'opacity-100' : 'opacity-0'}`}
+      />
+      <div
+        className={`relative w-full max-w-sm bg-white rounded-2xl border border-slate-200/80 p-5
+          transition-[opacity,transform] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]
+          ${visible ? 'opacity-100 scale-100' : 'opacity-0 scale-[0.96]'}`}
+        style={{ boxShadow: 'var(--shadow-float)' }}
+      >
+        <div className="flex items-start gap-3.5">
+          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ring-4
+            ${danger ? 'bg-rose-50 text-rose-600 ring-rose-50/60' : 'bg-brand-50 text-brand-600 ring-brand-50/60'}`}>
+            <AlertTriangle className="h-[18px] w-[18px]" />
+          </div>
+          <div className="min-w-0 pt-0.5">
+            <h3 id="confirm-title" className="text-[15px] font-semibold text-slate-900 tracking-tight">{title}</h3>
+            {description && <div className="mt-1 text-[13px] leading-relaxed text-slate-500 break-words">{description}</div>}
+          </div>
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <button ref={cancelRef} type="button" onClick={onCancel} className="btn btn-secondary">{cancelLabel}</button>
+          <button ref={confirmRef} type="button" onClick={onConfirm} className={`btn ${danger ? 'btn-destructive' : 'btn-primary'}`}>
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Promise-based replacement for window.confirm: `if (!(await askConfirm({...}))) return;` and render `confirmDialog`. */
+export function useConfirm() {
+  const [options, setOptions] = useState<ConfirmOptions | null>(null);
+  const resolver = useRef<((ok: boolean) => void) | null>(null);
+  const shown = useLastDefined(options);
+
+  const settle = useCallback((ok: boolean) => {
+    resolver.current?.(ok);
+    resolver.current = null;
+    setOptions(null);
+  }, []);
+
+  const askConfirm = useCallback((opts: ConfirmOptions) => {
+    resolver.current?.(false);
+    setOptions(opts);
+    return new Promise<boolean>(resolve => { resolver.current = resolve; });
+  }, []);
+
+  const onCancel = useCallback(() => settle(false), [settle]);
+  const onConfirm = useCallback(() => settle(true), [settle]);
+
+  const confirmDialog = shown ? (
+    <ConfirmDialog open={!!options} onConfirm={onConfirm} onCancel={onCancel} {...shown} />
+  ) : null;
+
+  return { askConfirm, confirmDialog };
 }
 
 interface DrawerProps {

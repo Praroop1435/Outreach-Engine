@@ -44,7 +44,7 @@ import {
 
 import TemplatesStudioView from '@/components/views/TemplatesStudioView';
 import { SidebarContent } from '@/components/shell/Sidebar';
-import { Drawer, Modal, useLastDefined } from '@/components/ui/overlay';
+import { Drawer, Modal, useConfirm, useLastDefined } from '@/components/ui/overlay';
 import { formatRelative, parseApiDate } from '@/lib/format';
 import { tagLinks } from '@/lib/utm';
 import { AnimatedNumber, Avatar, EmptyState, SegmentedTabs, SkeletonRows, StatusBadge, Toaster, useToasts } from '@/components/ui/primitives';
@@ -284,6 +284,7 @@ export default function OutreachEngineDashboard() {
   const [csvInput, setCsvInput] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const { toasts, push: showToast, dismiss: dismissToast } = useToasts();
+  const { askConfirm, confirmDialog } = useConfirm();
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -781,15 +782,27 @@ export default function OutreachEngineDashboard() {
     }
   };
 
-  const handleDeleteLead = async (leadId: number) => {
-    if (!confirm('Delete this contact permanently?')) return;
+  const handleDeleteLead = async (lead: Lead) => {
+    const name = [lead.first_name, lead.last_name].filter(Boolean).join(' ') || lead.email;
+    const ok = await askConfirm({
+      title: 'Delete this contact?',
+      description: <><span className="font-medium text-slate-700">{name}</span>{name !== lead.email && <> ({lead.email})</>} and all their emails and click history will be removed permanently.</>,
+      confirmLabel: 'Delete contact',
+      tone: 'danger',
+    });
+    if (!ok) return;
+
+    // Optimistic: drop the row now, put it back if the server refuses
+    const index = leads.findIndex(l => l.id === lead.id);
+    setLeads(prev => prev.filter(l => l.id !== lead.id));
+    if (activeDrawerLead?.id === lead.id) setActiveDrawerLead(null);
     try {
-      const res = await apiFetch(`/api/leads/${leadId}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/leads/${lead.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to delete contact');
       showToast('Contact deleted');
-      if (activeDrawerLead?.id === leadId) setActiveDrawerLead(null);
       fetchData();
     } catch (err: any) {
+      setLeads(prev => prev.some(l => l.id === lead.id) ? prev : [...prev.slice(0, index), lead, ...prev.slice(index)]);
       showToast(err.message, 'error');
     }
   };
@@ -909,6 +922,7 @@ export default function OutreachEngineDashboard() {
   return (
     <div className="min-h-screen lg:flex">
       <Toaster toasts={toasts} onDismiss={dismissToast} />
+      {confirmDialog}
       <input ref={fileInputRef} type="file" accept=".pdf" className="hidden" onChange={handleResumeUpload} />
 
       {/* Desktop sidebar */}
@@ -1167,7 +1181,7 @@ export default function OutreachEngineDashboard() {
                                     <button type="button" onClick={() => openEditLeadModal(lead)} className="btn btn-ghost btn-icon" title="Edit contact">
                                       <Edit className="h-3.5 w-3.5" />
                                     </button>
-                                    <button type="button" onClick={() => handleDeleteLead(lead.id)} className="btn btn-danger btn-icon" title="Delete contact">
+                                    <button type="button" onClick={() => handleDeleteLead(lead)} className="btn btn-danger btn-icon" title="Delete contact">
                                       <Trash2 className="h-3.5 w-3.5" />
                                     </button>
                                   </div>

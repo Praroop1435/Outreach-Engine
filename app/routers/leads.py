@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlmodel import Session, select, func, or_, col
+from sqlalchemy import delete
 from typing import List, Optional
 from datetime import datetime
 import csv
@@ -138,10 +139,13 @@ def update_lead(lead_id: int, lead_in: LeadUpdate, session: Session = Depends(ge
 
 @router.delete("/{lead_id}")
 def delete_lead(lead_id: int, session: Session = Depends(get_session)):
-    lead = session.get(Lead, lead_id)
-    if not lead:
+    # Bulk deletes instead of ORM cascade, which loads every message and click before deleting them one by one
+    session.execute(delete(EmailMessage).where(EmailMessage.lead_id == lead_id))
+    session.execute(delete(LinkClick).where(LinkClick.lead_id == lead_id))
+    deleted = session.execute(delete(Lead).where(Lead.id == lead_id)).rowcount
+    if not deleted:
+        session.rollback()
         raise HTTPException(status_code=404, detail="Lead not found")
-    session.delete(lead)
     session.commit()
     app_cache.invalidate()
     return {"ok": True, "message": "Lead deleted successfully"}

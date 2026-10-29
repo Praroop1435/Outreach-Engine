@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Check, CheckCircle2, Copy, Layers, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { EmptyState, SegmentedTabs } from '@/components/ui/primitives';
+import { useConfirm } from '@/components/ui/overlay';
 
 export interface Template {
   id: number;
@@ -61,6 +62,7 @@ export default function TemplatesStudioView({ templates, fetchData, showToast, a
   const [category, setCategory] = useState('ALL');
   const [query, setQuery] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const { askConfirm, confirmDialog } = useConfirm();
   const [view, setView] = useState<'edit' | 'preview'>('edit');
 
   const select = (t: Template) => {
@@ -141,7 +143,14 @@ export default function TemplatesStudioView({ templates, fetchData, showToast, a
   };
 
   const remove = async () => {
-    if (!form.id || !confirm(`Delete "${form.name}"?`)) return;
+    if (!form.id) return;
+    const ok = await askConfirm({
+      title: 'Delete this template?',
+      description: <><span className="font-medium text-slate-700">{form.name}</span> will be removed permanently. Emails already sent with it are not affected.</>,
+      confirmLabel: 'Delete template',
+      tone: 'danger',
+    });
+    if (!ok) return;
     try {
       const res = await apiFetch(`/api/templates/${form.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Could not delete template');
@@ -310,6 +319,7 @@ export default function TemplatesStudioView({ templates, fetchData, showToast, a
           </button>
         </div>
       </form>
+      {confirmDialog}
     </div>
   );
 }
