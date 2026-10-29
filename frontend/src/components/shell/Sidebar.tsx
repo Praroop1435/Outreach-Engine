@@ -9,6 +9,7 @@ import {
   MousePointerClick,
   Paperclip,
   SendHorizontal,
+  Share2,
   Upload,
 } from 'lucide-react';
 import type { SidebarTab } from '@/app/page';
@@ -48,6 +49,16 @@ const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
   },
 ];
 
+// The share view only shows outreach progress: no inbox, templates, clicks or settings
+const SHARE_NAV_IDS: SidebarTab[] = ['pipeline', 'founder_dms'];
+
+function shareLink() {
+  const url = new URL(window.location.href);
+  url.searchParams.set('view', 'share');
+  if (!SHARE_NAV_IDS.includes(url.searchParams.get('tab') as SidebarTab)) url.searchParams.set('tab', 'pipeline');
+  return url.toString();
+}
+
 interface SidebarProps {
   active: SidebarTab;
   onNavigate: (tab: SidebarTab) => void;
@@ -57,9 +68,14 @@ interface SidebarProps {
   resumeSizeKb: number;
   onUploadResume: () => void;
   email: string;
+  shareMode: boolean;
 }
 
-export function SidebarContent({ active, onNavigate, counts, backendOnline, resumeFilename, resumeSizeKb, onUploadResume, email }: SidebarProps) {
+export function SidebarContent({ active, onNavigate, counts, backendOnline, resumeFilename, resumeSizeKb, onUploadResume, email, shareMode }: SidebarProps) {
+  const groups = shareMode
+    ? NAV_GROUPS.map(g => ({ ...g, items: g.items.filter(i => SHARE_NAV_IDS.includes(i.id)) })).filter(g => g.items.length > 0)
+    : NAV_GROUPS;
+
   const navRef = useRef<HTMLElement>(null);
   const [indicator, setIndicator] = useState<{ top: number; height: number } | null>(null);
 
@@ -81,14 +97,16 @@ export function SidebarContent({ active, onNavigate, counts, backendOnline, resu
         <img src="/icon.svg" alt="" className="h-8 w-8 rounded-lg" />
         <div className="min-w-0">
           <div className="text-[15px] font-semibold tracking-tight text-slate-900 leading-none">Outreach</div>
-          <div className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-400">
+          {shareMode ? (
+            <div className="mt-1 text-[11px] text-slate-400">Job search progress</div>
+          ) : <div className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-400">
             <span
               className={`h-1.5 w-1.5 rounded-full ${
                 backendOnline === null ? 'bg-slate-300' : backendOnline ? 'bg-emerald-500 shadow-[0_0_0_3px_rgb(16_185_129/0.15)]' : 'bg-rose-500'
               }`}
             />
             {backendOnline === null ? 'Connecting' : backendOnline ? 'Backend online' : 'Backend offline'}
-          </div>
+          </div>}
         </div>
       </div>
 
@@ -100,7 +118,7 @@ export function SidebarContent({ active, onNavigate, counts, backendOnline, resu
             style={{ top: indicator.top, height: indicator.height, boxShadow: 'var(--shadow-soft)' }}
           />
         )}
-        {NAV_GROUPS.map(group => (
+        {groups.map(group => (
           <div key={group.title}>
             <div className="eyebrow mb-1.5 px-3">{group.title}</div>
             <div className="space-y-0.5">
@@ -139,8 +157,17 @@ export function SidebarContent({ active, onNavigate, counts, backendOnline, resu
         ))}
       </nav>
 
-      {/* Resume + account */}
-      <div className="space-y-3 pt-4">
+      {/* Resume + account (hidden in the share view) */}
+      {!shareMode && <div className="space-y-3 pt-4">
+        <button
+          type="button"
+          onClick={() => window.open(shareLink(), '_blank', 'noopener')}
+          className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-[13px] font-medium text-slate-500 hover:bg-slate-900/[0.035] hover:text-slate-900"
+          title="Open a read-only view without your email, resume or backend details"
+        >
+          <Share2 className="h-4 w-4 text-slate-400" />
+          Open share view
+        </button>
         <button
           type="button"
           onClick={onUploadResume}
@@ -157,7 +184,7 @@ export function SidebarContent({ active, onNavigate, counts, backendOnline, resu
           <Upload className="h-3.5 w-3.5 text-slate-300 group-hover:text-brand-600" />
         </button>
         <div className="truncate px-2 text-[11px] text-slate-400">{email}</div>
-      </div>
+      </div>}
     </div>
   );
 }

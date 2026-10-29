@@ -37,13 +37,15 @@ import {
   Menu,
   SendHorizontal,
   Radio,
-  Share2
+  Share2,
+  ArrowDownWideNarrow,
+  ArrowUpNarrowWide
 } from 'lucide-react';
 
 import TemplatesStudioView from '@/components/views/TemplatesStudioView';
 import { SidebarContent } from '@/components/shell/Sidebar';
 import { Drawer, Modal, useLastDefined } from '@/components/ui/overlay';
-import { formatRelative } from '@/lib/format';
+import { formatRelative, parseApiDate } from '@/lib/format';
 import { tagLinks } from '@/lib/utm';
 import { AnimatedNumber, Avatar, EmptyState, SegmentedTabs, SkeletonRows, StatusBadge, Toaster, useToasts } from '@/components/ui/primitives';
 import ClicksTrackingView from '@/components/views/ClicksTrackingView';
@@ -219,6 +221,10 @@ export default function OutreachEngineDashboard() {
   const [activeSidebarNav, setActiveSidebarNav] = useState<SidebarTab>('pipeline');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [founderStatusFilter, setFounderStatusFilter] = useState('ALL');
+  const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc');
+
+  // Share view (?view=share): read-only, hides backend status, resume, your email and contact emails
+  const [shareMode, setShareMode] = useState(false);
 
   const handleNavChange = (tab: SidebarTab) => {
     setActiveSidebarNav(tab);
@@ -330,6 +336,12 @@ export default function OutreachEngineDashboard() {
     return leads.filter(l => !(l.source && l.source.includes('1500+')) && !(l.status && l.status.includes('DM')));
   }, [leads]);
 
+  // Newest (or oldest) activity first; never-contacted leads fall back to when they were added
+  const byDate = useCallback((a: Lead, b: Lead) => {
+    const diff = leadTime(a) - leadTime(b);
+    return sortDir === 'desc' ? -diff : diff;
+  }, [sortDir]);
+
   // In-memory instant filtering for regular pipeline leads
   const filteredLeads = useMemo(() => {
     return regularLeads.filter(lead => {
@@ -362,8 +374,8 @@ export default function OutreachEngineDashboard() {
       }
 
       return true;
-    });
-  }, [regularLeads, statusFilter, searchQuery]);
+    }).sort(byDate);
+  }, [regularLeads, statusFilter, searchQuery, byDate]);
 
   // In-memory instant filtering for Founder X DMs
   const filteredFounderLeads = useMemo(() => {
@@ -380,8 +392,8 @@ export default function OutreachEngineDashboard() {
         return fullName.includes(q) || comp.includes(q) || handle.includes(q) || notes.includes(q);
       }
       return true;
-    });
-  }, [founderLeads, founderStatusFilter, searchQuery]);
+    }).sort(byDate);
+  }, [founderLeads, founderStatusFilter, searchQuery, byDate]);
 
   // Dynamically computed tab counts in 0ms
   const tabCounts = useMemo(() => {
@@ -453,10 +465,14 @@ export default function OutreachEngineDashboard() {
   };
 
   useEffect(() => {
-    // 0. Restore tab from URL search param if present
+    // 0. Restore tab (and share view) from URL search params if present
     try {
-      const urlTab = new URLSearchParams(window.location.search).get('tab') as SidebarTab | null;
-      if (urlTab && ['pipeline', 'founder_dms', 'templates', 'clicks', 'inbox', 'settings'].includes(urlTab)) {
+      const params = new URLSearchParams(window.location.search);
+      const isShare = params.get('view') === 'share';
+      setShareMode(isShare);
+      const urlTab = params.get('tab') as SidebarTab | null;
+      const allowedTabs = isShare ? SHARE_TABS : ['pipeline', 'founder_dms', 'templates', 'clicks', 'inbox', 'settings'];
+      if (urlTab && allowedTabs.includes(urlTab)) {
         setActiveSidebarNav(urlTab);
       }
     } catch (_) {}
@@ -854,7 +870,20 @@ export default function OutreachEngineDashboard() {
     resumeSizeKb: resumeStatus.size_kb,
     onUploadResume: () => fileInputRef.current?.click(),
     email: 'anandpraroop@gmail.com',
+    shareMode,
   };
+
+  const sortButton = (
+    <button
+      type="button"
+      onClick={() => setSortDir(d => (d === 'desc' ? 'asc' : 'desc'))}
+      className="btn btn-secondary shrink-0"
+      title="Sort by last contacted date"
+    >
+      {sortDir === 'desc' ? <ArrowDownWideNarrow className="h-3.5 w-3.5 text-slate-500" /> : <ArrowUpNarrowWide className="h-3.5 w-3.5 text-slate-500" />}
+      {sortDir === 'desc' ? 'Newest first' : 'Oldest first'}
+    </button>
+  );
 
   const searchBox = (placeholder: string) => (
     <div className="relative w-full md:w-80">
@@ -905,7 +934,7 @@ export default function OutreachEngineDashboard() {
               <h1 key={activeSidebarNav} className="animate-fade-in truncate text-[17px] font-semibold tracking-tight text-slate-900">{meta.title}</h1>
               <p className="hidden sm:block truncate text-[13px] text-slate-500">{meta.subtitle}</p>
             </div>
-            <div className="flex items-center gap-2">
+            {!shareMode && <div className="flex items-center gap-2">
               <button type="button" onClick={handleManualSyncMailbox} disabled={isSyncingMailbox} className="btn btn-secondary" title="Check Gmail for replies and bounces">
                 <RefreshCw className={`h-3.5 w-3.5 ${isSyncingMailbox ? 'animate-spin text-brand-600' : 'text-slate-500'}`} />
                 <span className="hidden sm:inline">{isSyncingMailbox ? 'Syncing' : 'Sync inbox'}</span>
@@ -922,7 +951,7 @@ export default function OutreachEngineDashboard() {
                   </button>
                 </>
               )}
-            </div>
+            </div>}
           </div>
         </header>
 
@@ -977,7 +1006,10 @@ export default function OutreachEngineDashboard() {
 
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                 <SegmentedTabs tabs={founderFilterTabs} value={founderStatusFilter} onChange={setFounderStatusFilter} />
-                {searchBox('Search founder, company, @handle')}
+                <div className="flex items-center gap-2">
+                  {sortButton}
+                  {searchBox('Search founder, company, @handle')}
+                </div>
               </div>
 
               <div className="card overflow-hidden">
@@ -989,15 +1021,16 @@ export default function OutreachEngineDashboard() {
                         <Th className="hidden md:table-cell">Founder</Th>
                         <Th className="hidden lg:table-cell">X profile</Th>
                         <Th>Status</Th>
-                        <Th className="text-right">Actions</Th>
+                        <Th className="hidden lg:table-cell">Last contacted</Th>
+                        {!shareMode && <Th className="text-right">Actions</Th>}
                       </tr>
                     </thead>
-                    <tbody key={`${founderStatusFilter}-${searchQuery}`} className="stagger">
+                    <tbody key={`${founderStatusFilter}-${searchQuery}-${sortDir}`} className="stagger">
                       {isLoading && founderLeads.length === 0 ? (
-                        <SkeletonRows cols={5} />
+                        <SkeletonRows cols={shareMode ? 5 : 6} />
                       ) : filteredFounderLeads.length === 0 ? (
                         <tr>
-                          <td colSpan={5}>
+                          <td colSpan={shareMode ? 5 : 6}>
                             <EmptyState icon={<SendHorizontal className="h-5 w-5" />} title="No founders here" description="Try a different filter or clear the search." />
                           </td>
                         </tr>
@@ -1034,7 +1067,8 @@ export default function OutreachEngineDashboard() {
                                 )}
                               </td>
                               <td className="px-3 sm:px-4 py-3.5"><StatusBadge status={lead.status} /></td>
-                              <td className="px-3 sm:px-4 py-3.5">
+                              <td className="hidden lg:table-cell px-4 py-3.5 text-xs text-slate-500 tabular-nums">{formatRelative(lead.last_contacted_at)}</td>
+                              {!shareMode && <td className="px-3 sm:px-4 py-3.5">
                                 <div className="flex items-center justify-end gap-1.5">
                                   <button type="button" onClick={() => copyFounderPitch(lead)} className="btn btn-secondary btn-sm" title="Copy a short DM with your Loom">
                                     <Copy className="h-3 w-3" />
@@ -1045,7 +1079,7 @@ export default function OutreachEngineDashboard() {
                                     <span className="hidden sm:inline">{lead.status === 'DMED' ? 'DMed' : 'Mark DMed'}</span>
                                   </button>
                                 </div>
-                              </td>
+                              </td>}
                             </tr>
                           );
                         })
@@ -1068,7 +1102,10 @@ export default function OutreachEngineDashboard() {
 
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                 <SegmentedTabs tabs={filterTabs} value={statusFilter} onChange={setStatusFilter} />
-                {searchBox('Search name, company, email')}
+                <div className="flex items-center gap-2">
+                  {sortButton}
+                  {searchBox(shareMode ? 'Search name, company' : 'Search name, company, email')}
+                </div>
               </div>
 
               <div className="card overflow-hidden">
@@ -1081,20 +1118,20 @@ export default function OutreachEngineDashboard() {
                         <Th className="hidden md:table-cell">Email</Th>
                         <Th>Status</Th>
                         <Th className="hidden lg:table-cell">Last contacted</Th>
-                        <Th className="text-right">Actions</Th>
+                        {!shareMode && <Th className="text-right">Actions</Th>}
                       </tr>
                     </thead>
-                    <tbody key={`${statusFilter}-${searchQuery}`} className="stagger">
+                    <tbody key={`${statusFilter}-${searchQuery}-${sortDir}`} className="stagger">
                       {isLoading && regularLeads.length === 0 ? (
-                        <SkeletonRows cols={6} />
+                        <SkeletonRows cols={shareMode ? 5 : 6} />
                       ) : filteredLeads.length === 0 ? (
                         <tr>
-                          <td colSpan={6}>
+                          <td colSpan={shareMode ? 5 : 6}>
                             <EmptyState
                               icon={<Inbox className="h-5 w-5" />}
                               title="No contacts found"
-                              description="Try a different filter, clear the search, or add someone new."
-                              action={<button type="button" onClick={openNewLeadModal} className="btn btn-secondary btn-sm"><Plus className="h-3.5 w-3.5" />Add contact</button>}
+                              description={shareMode ? 'Try a different filter or clear the search.' : 'Try a different filter, clear the search, or add someone new.'}
+                              action={shareMode ? undefined : <button type="button" onClick={openNewLeadModal} className="btn btn-secondary btn-sm"><Plus className="h-3.5 w-3.5" />Add contact</button>}
                             />
                           </td>
                         </tr>
@@ -1105,8 +1142,8 @@ export default function OutreachEngineDashboard() {
                             <tr
                               key={lead.id}
                               style={{ '--i': i } as React.CSSProperties}
-                              onClick={() => openLeadDrawer(lead.id)}
-                              className="group cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50/70"
+                              onClick={shareMode ? undefined : () => openLeadDrawer(lead.id)}
+                              className={`group border-b border-slate-100 last:border-0 hover:bg-slate-50/70 ${shareMode ? '' : 'cursor-pointer'}`}
                             >
                               <td className="px-3 sm:px-4 py-3">
                                 <div className="flex items-center gap-3">
@@ -1121,10 +1158,10 @@ export default function OutreachEngineDashboard() {
                                 </div>
                               </td>
                               <td className="hidden sm:table-cell px-4 py-3 font-medium text-slate-700">{lead.company || <span className="text-slate-300">None</span>}</td>
-                              <td className="hidden md:table-cell px-4 py-3 font-mono text-xs text-slate-500">{lead.email}</td>
+                              <td className="hidden md:table-cell px-4 py-3 font-mono text-xs text-slate-500">{shareMode ? maskEmail(lead.email) : lead.email}</td>
                               <td className="px-3 sm:px-4 py-3"><StatusBadge status={lead.status} /></td>
                               <td className="hidden lg:table-cell px-4 py-3 text-xs text-slate-500 tabular-nums">{formatRelative(lead.last_contacted_at)}</td>
-                              <td className="px-3 sm:px-4 py-3" onClick={e => e.stopPropagation()}>
+                              {!shareMode && <td className="px-3 sm:px-4 py-3" onClick={e => e.stopPropagation()}>
                                 <div className="flex items-center justify-end gap-1">
                                   <div className="hidden lg:flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                                     <button type="button" onClick={() => openEditLeadModal(lead)} className="btn btn-ghost btn-icon" title="Edit contact">
@@ -1139,7 +1176,7 @@ export default function OutreachEngineDashboard() {
                                     <span className="hidden sm:inline">Email</span>
                                   </button>
                                 </div>
-                              </td>
+                              </td>}
                             </tr>
                           );
                         })
@@ -1150,7 +1187,7 @@ export default function OutreachEngineDashboard() {
                 {!isLoading && filteredLeads.length > 0 && (
                   <div className="flex items-center justify-between border-t border-slate-100 px-4 py-2.5 text-xs text-slate-400">
                     <span>{filteredLeads.length} of {regularLeads.length} contacts</span>
-                    <span className="hidden sm:inline">Click a row to see the full thread</span>
+                    {!shareMode && <span className="hidden sm:inline">Click a row to see the full thread</span>}
                   </div>
                 )}
               </div>
@@ -1518,6 +1555,20 @@ const PAGE_META: Record<SidebarTab, { title: string; subtitle: string }> = {
   inbox: { title: 'Inbox', subtitle: 'Replies and bounces synced from Gmail' },
   settings: { title: 'System & sync', subtitle: 'Database, Gmail and keep-alive health' },
 };
+
+const SHARE_TABS: SidebarTab[] = ['pipeline', 'founder_dms'];
+
+function leadTime(lead: Lead) {
+  const iso = lead.last_contacted_at || lead.created_at;
+  return iso ? parseApiDate(iso).getTime() : 0;
+}
+
+/** "diego@gabeo.ai" -> "d•••@gabeo.ai" so a shared screen never shows full addresses. */
+function maskEmail(email: string) {
+  const [user, domain] = email.split('@');
+  if (!domain) return '•••';
+  return `${user.slice(0, 1)}•••@${domain}`;
+}
 
 function wordCount(text: string) {
   return text.trim() ? text.trim().split(/\s+/).length : 0;

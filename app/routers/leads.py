@@ -120,7 +120,11 @@ def update_lead(lead_id: int, lead_in: LeadUpdate, session: Session = Depends(ge
     update_data = lead_in.model_dump(exclude_unset=True)
     for key, val in update_data.items():
         setattr(lead, key, val)
-    
+
+    # Marking a DM as sent counts as contact, so date sorting picks it up
+    if update_data.get("status") == "DMED" and "last_contacted_at" not in update_data:
+        lead.last_contacted_at = datetime.utcnow()
+
     lead.updated_at = datetime.utcnow()
     session.add(lead)
     session.commit()

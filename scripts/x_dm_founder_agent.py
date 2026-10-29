@@ -2,6 +2,7 @@ import sys
 import json
 import time
 import subprocess
+from datetime import datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path("/Users/praroopanand/Realm/Code/Personal Outrech")
@@ -270,6 +271,7 @@ def process_founder_dms(batch_size: int = None, auto_send: bool = True):
                 time.sleep(2.5)
 
                 lead.status = "DMED"
+                lead.last_contacted_at = datetime.utcnow()
                 lead.notes = (lead.notes or "") + " | Sent via X DM Agent"
                 msg = EmailMessage(
                     lead_id=lead.id,
