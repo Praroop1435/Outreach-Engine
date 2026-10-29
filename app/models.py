@@ -151,7 +151,7 @@ class SendEmailRequest(BaseModel):
     body: str
     template_id: Optional[int] = None
     attach_resume: bool = True
-    enable_utm_tracking: bool = True
+    enable_utm_tracking: bool = False
 
 class SendXDMRequest(BaseModel):
     message: str

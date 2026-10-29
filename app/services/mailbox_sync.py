@@ -2,7 +2,7 @@ import imaplib
 import email
 from email.header import decode_header
 from email.utils import parseaddr, parsedate_to_datetime
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, List, Optional
 import os
 import time
@@ -54,6 +54,18 @@ def extract_body(msg: email.message.Message) -> str:
     except Exception:
         pass
     return body.strip()
+
+def parse_email_date(date_header: Optional[str]) -> datetime:
+    """Parses an RFC 2822 Date header into naive UTC (Gmail stamps Sent Mail in Pacific time)."""
+    if date_header:
+        try:
+            dt = parsedate_to_datetime(date_header)
+            if dt.tzinfo:
+                dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+            return dt
+        except Exception:
+            pass
+    return datetime.utcnow()
 
 def infer_company_from_email(email_str: str) -> str:
     """Infers reasonable company name from email domain if generic domains are excluded."""
@@ -178,13 +190,7 @@ def sync_mailbox(session: Session, max_messages: int = 150, auto_create_leads: b
                         msg_id = msg.get("Message-ID", "")
                         thread_id = msg.get("Thread-Index", "")
 
-                        date_header = msg.get("Date")
-                        sent_dt = datetime.utcnow()
-                        if date_header:
-                            try:
-                                sent_dt = parsedate_to_datetime(date_header).replace(tzinfo=None)
-                            except Exception:
-                                pass
+                        sent_dt = parse_email_date(msg.get("Date"))
 
                         body = extract_body(msg)
                         snippet = body[:200].strip() if body else subject
@@ -231,6 +237,22 @@ def sync_mailbox(session: Session, max_messages: int = 150, auto_create_leads: b
                             existing_msg = session.exec(
                                 select(EmailMessage).where(EmailMessage.message_id == msg_id)
                             ).first()
+                        if not existing_msg:
+                            # Emails sent from this app are already logged; Gmail may rewrite the Message-ID,
+                            # so match on lead + subject + send time and backfill the ID instead of duplicating.
+                            existing_msg = session.exec(
+                                select(EmailMessage).where(
+                                    EmailMessage.lead_id == lead.id,
+                                    EmailMessage.direction == EmailDirection.SENT.value,
+                                    EmailMessage.subject == subject,
+                                    EmailMessage.sent_at >= sent_dt - timedelta(minutes=10),
+                                    EmailMessage.sent_at <= sent_dt + timedelta(minutes=10),
+                                )
+                            ).first()
+                            if existing_msg and msg_id and not existing_msg.message_id:
+                                existing_msg.message_id = msg_id
+                                session.add(existing_msg)
+                                session.commit()
                         if not existing_msg:
                             email_record = EmailMessage(
                                 lead_id=lead.id,
@@ -319,13 +341,7 @@ def sync_mailbox(session: Session, max_messages: int = 150, auto_create_leads: b
                             msg_id = msg.get("Message-ID", "")
                             thread_id = msg.get("Thread-Index", "")
 
-                            date_header = msg.get("Date")
-                            recv_dt = datetime.utcnow()
-                            if date_header:
-                                try:
-                                    recv_dt = parsedate_to_datetime(date_header).replace(tzinfo=None)
-                                except Exception:
-                                    pass
+                            recv_dt = parse_email_date(msg.get("Date"))
 
                             body = extract_body(msg)
                             snippet = body[:200].strip() if body else subject

@@ -1,0 +1,353 @@
+{
+  "_about": "Single source of truth for Praroop's proof of work. Templates and agents should pull facts from here instead of rewriting them per script. Only verified numbers live here (from resume/Praroop_Anand.pdf and praroop.site, Oct 2026).",
+  "identity": {
+    "name": "Praroop Anand",
+    "headline": "AI engineer who ships production agents, RAG systems and async backends",
+    "current_role": "AI Automation Developer (Intern) at Relu Consultancy, remote, since May 2026",
+    "student_status": "Final-year B.Tech IT at IEM Kolkata, graduating May 2027",
+    "location": "India, remote only",
+    "availability": "Can start immediately, 0 notice period",
+    "one_liner": "I'm an AI engineer at Relu Consultancy, where I've shipped 6+ production AI systems for international clients.",
+    "honest_framing_note": "Say 'AI engineer at Relu' in founder emails and 'final-year student with 6 months of production work' in internship emails. Never inflate years of experience. Recruiters check the resume, and a mismatch kills trust."
+  },
+  "links": {
+    "portfolio": "https://praroop.site",
+    "github": "https://github.com/Praroop1435",
+    "linkedin": "https://www.linkedin.com/in/praroop1435",
+    "x": "https://x.com/PraroopX",
+    "email": "anandpraroop@gmail.com",
+    "_note": "config/candidate_profile.json still lists linkedin.com/in/praroop-anand and x.com/anand_praroop. The resume and portfolio use the links above. Use one set everywhere."
+  },
+  "looms": {
+    "insightflow": {
+      "url": "https://www.loom.com/share/5f715f784c3142e690f16f8df66f3799",
+      "project": "InsightFlow AI",
+      "use_when": "Default Loom. Best for AI, RAG, LLM, B2B SaaS, fintech, insurtech, healthtech and any 'AI engineer' role."
+    },
+    "social_automate": {
+      "url": "https://www.loom.com/share/f640c1a4815b424393261574b37d93b4",
+      "project": "AI Social Automate",
+      "use_when": "Best for backend, platform, payments, marketing tech, creator tools, and 'backend / full-stack engineer' roles."
+    },
+    "rule": "One Loom per email. Send the second Loom in the first follow-up, so the follow-up adds something new."
+  },
+  "projects": [
+    {
+      "id": "insightflow",
+      "name": "InsightFlow AI",
+      "type": "Client work (US insurance agency) via Relu Consultancy",
+      "live_url": "https://portal.e360insurance.com",
+      "loom": "https://www.loom.com/share/5f715f784c3142e690f16f8df66f3799",
+      "stack": [
+        "FastAPI",
+        "Next.js",
+        "PostgreSQL",
+        "pgvector",
+        "Claude API",
+        "RAGAS"
+      ],
+      "what_it_is": "AI platform for a US insurance agency with 5 production modules: RAG chatbot, policy summarizer, sales assistant and more.",
+      "proof_points": [
+        "92% retrieval accuracy, benchmarked with RAGAS",
+        "40% lower query latency after moving semantic search to pgvector",
+        "5 AI modules live in production for a real US client"
+      ],
+      "email_line": "InsightFlow AI: a 5-module AI platform for a US insurance agency. RAG on pgvector, 92% on RAGAS, 40% faster search.",
+      "fits": [
+        "AI engineer",
+        "LLM / RAG",
+        "applied AI",
+        "B2B SaaS",
+        "insurtech",
+        "fintech",
+        "healthtech"
+      ]
+    },
+    {
+      "id": "social_automate",
+      "name": "AI Social Automate",
+      "type": "Client SaaS via Relu Consultancy",
+      "live_url": "https://aisocialautomate.com",
+      "loom": "https://www.loom.com/share/f640c1a4815b424393261574b37d93b4",
+      "stack": [
+        "Django 5.1",
+        "PostgreSQL",
+        "MongoDB",
+        "Celery",
+        "Redis",
+        "Stripe",
+        "PayPal",
+        "Razorpay",
+        "Firebase Auth"
+      ],
+      "what_it_is": "Social media automation SaaS: lead acquisition and multi-platform publishing across IG, Facebook, LinkedIn, TikTok and X. I built the whole backend.",
+      "proof_points": [
+        "21 SQL tables and 7 MongoDB collections, designed from scratch",
+        "Stripe, PayPal and Razorpay webhooks with 100% idempotency",
+        "Lead-scraping connectors for 5 platforms pulling 500+ leads a day",
+        "Rate limiting, token refresh rotation and API-as-a-service docs"
+      ],
+      "email_line": "AI Social Automate: I built the full backend. Django, Celery, Redis, idempotent Stripe/PayPal webhooks, 500+ leads a day.",
+      "fits": [
+        "backend engineer",
+        "full-stack",
+        "platform",
+        "payments",
+        "martech",
+        "creator tools"
+      ]
+    },
+    {
+      "id": "airtable_mcp",
+      "name": "Airtable Full-Stack MCP",
+      "type": "Open-source dev tool (mine)",
+      "live_url": "https://www.npmjs.com/package/airtable-fullstack-mcp",
+      "loom": null,
+      "stack": [
+        "TypeScript",
+        "Node.js",
+        "MCP",
+        "Chrome CDP",
+        "Airtable API"
+      ],
+      "what_it_is": "MCP server on npm that lets AI agents in Claude and Cursor build Airtable interfaces, kanbans, webhooks and automations. Pairs the REST and Metadata APIs with Chrome CDP for what the API cannot do.",
+      "proof_points": [
+        "Published on npm",
+        "Rated 4.7/5 (Grade A) on Glama across 14 tools"
+      ],
+      "email_line": "I also maintain an open-source MCP server on npm (Grade A on Glama) that lets Claude and Cursor agents build Airtable apps.",
+      "fits": [
+        "dev tools",
+        "AI agents",
+        "MCP",
+        "infra",
+        "open source"
+      ]
+    },
+    {
+      "id": "lead_enrichment",
+      "name": "Lead Enrichment Pipeline",
+      "type": "Client work via Relu Consultancy",
+      "live_url": null,
+      "loom": null,
+      "stack": [
+        "Flask",
+        "Gemini 2.5 Flash",
+        "Crawl4AI",
+        "SerpAPI"
+      ],
+      "what_it_is": "Nightly cron API that enriches client leads from SOW documents and web scrapes into structured JSON.",
+      "proof_points": [
+        "100+ leads enriched every night",
+        "About 85% less manual research time"
+      ],
+      "email_line": "A nightly enrichment pipeline (Gemini + Crawl4AI) that turns 100+ raw leads into structured data, cutting research time ~85%.",
+      "fits": [
+        "data",
+        "sales tech",
+        "scraping",
+        "automation"
+      ]
+    },
+    {
+      "id": "multichannel_automation",
+      "name": "Inventory & Email Automation Systems",
+      "type": "Client work via Relu Consultancy",
+      "live_url": null,
+      "loom": null,
+      "stack": [
+        "n8n",
+        "GPT-4o-mini",
+        "WhatsApp",
+        "Telegram",
+        "ClickUp",
+        "Airtable"
+      ],
+      "what_it_is": "Multi-channel offer intake for a watch dealer plus freight inquiry classification, all on webhooks and LLM intent extraction.",
+      "proof_points": [
+        "200+ offers processed every week",
+        "10+ workflows, 30% fewer duplicate leads",
+        "Every outcome logged with an AI-written audit reason"
+      ],
+      "email_line": "n8n + GPT-4o-mini workflows that process 200+ WhatsApp/Telegram offers a week for a client.",
+      "fits": [
+        "automation",
+        "ops",
+        "logistics",
+        "n8n",
+        "agencies"
+      ]
+    },
+    {
+      "id": "aviationops",
+      "name": "AviationOps Dashboard",
+      "type": "Client work via Relu Consultancy",
+      "live_url": null,
+      "loom": null,
+      "stack": [
+        "Airtable",
+        "Fillout"
+      ],
+      "what_it_is": "Rebuilt the Airtable schema for a US aviation service company (FBO) so check-in forms flow straight into production records.",
+      "proof_points": [
+        "50+ live service orders a day",
+        "15 hours of manual entry saved per week"
+      ],
+      "email_line": "An ops dashboard for a US aviation company that saves them 15 hours of data entry a week.",
+      "fits": [
+        "ops",
+        "no-code",
+        "internal tools"
+      ]
+    },
+    {
+      "id": "outreach_engine",
+      "name": "Nexus Outreach Engine",
+      "type": "Personal project (this repo)",
+      "live_url": "https://github.com/Praroop1435/Outreach-Engine",
+      "loom": null,
+      "stack": [
+        "FastAPI",
+        "Next.js",
+        "PostgreSQL",
+        "IMAP/SMTP",
+        "Playwright"
+      ],
+      "what_it_is": "Self-hosted outreach CRM with Gmail send, IMAP reply and bounce sync, and an X DM agent.",
+      "proof_points": [],
+      "email_line": null,
+      "fits": [],
+      "_note": "Do not pitch this to founders. Telling someone you built a tool to cold email them makes the email feel automated."
+    }
+  ],
+  "pick_by_target": {
+    "ai_or_llm_startup": [
+      "insightflow",
+      "airtable_mcp"
+    ],
+    "devtools_or_agents": [
+      "airtable_mcp",
+      "insightflow"
+    ],
+    "backend_or_platform": [
+      "social_automate",
+      "insightflow"
+    ],
+    "automation_agency_or_ops": [
+      "multichannel_automation",
+      "lead_enrichment"
+    ],
+    "internship": [
+      "insightflow",
+      "social_automate"
+    ]
+  },
+  "skills": {
+    "languages": [
+      "Python",
+      "TypeScript",
+      "SQL",
+      "C++"
+    ],
+    "ai": [
+      "LangChain",
+      "LangGraph",
+      "RAG",
+      "OpenAI",
+      "Claude",
+      "Gemini",
+      "Groq",
+      "pgvector",
+      "FAISS",
+      "ChromaDB",
+      "RAGAS"
+    ],
+    "backend": [
+      "FastAPI",
+      "Django",
+      "Flask",
+      "Celery",
+      "Redis",
+      "PostgreSQL",
+      "MongoDB"
+    ],
+    "automation": [
+      "n8n",
+      "Playwright",
+      "Crawl4AI",
+      "webhooks",
+      "Airtable"
+    ],
+    "deploy": [
+      "Docker",
+      "Hetzner VPS",
+      "Google Cloud Run",
+      "GitHub Actions",
+      "Nginx"
+    ]
+  },
+  "send_rules": {
+    "max_words_first_email": 120,
+    "links_per_email": "2 max: one Loom, one portfolio. No tracking redirects.",
+    "attach_resume": "Only when applying to a posted role. Skip it for founder cold emails and offer to send it instead.",
+    "daily_volume": "20 to 30 new emails a day from personal Gmail, spread over the day. Never 100 in one burst.",
+    "follow_ups": "Reply in the same thread on day 3 or 4 (second Loom), then day 8 (short close-out).",
+    "custom_hook": "Must be a real sentence fragment about their product, written by a human or checked by one. Never 'what you are building at X (linkedin url, city)'.",
+    "best_send_time": "Tuesday to Thursday, 8 to 10 AM in the recipient's timezone",
+    "paid_only": "Offer a small paid trial, never free work. It signals you value your time and filters out people who will not pay 20K+."
+  },
+  "job_search": {
+    "work_mode": "Remote only",
+    "types": [
+      "Paid internship",
+      "Full-time job"
+    ],
+    "min_compensation": "Above INR 20,000 per month (current stipend is INR 20,000). Do not mention pay in the first email, settle it on the call.",
+    "target_roles": {
+      "ai_engineer": {
+        "titles": [
+          "AI Engineer",
+          "Applied AI Engineer",
+          "LLM Engineer",
+          "AI Intern",
+          "GenAI Engineer"
+        ],
+        "lead_project": "insightflow",
+        "loom": "insightflow",
+        "template": "2. Posted Role Application (Two Looms)"
+      },
+      "backend": {
+        "titles": [
+          "Backend Engineer",
+          "Python Developer",
+          "Platform Engineer",
+          "Founding Engineer",
+          "Backend Intern"
+        ],
+        "lead_project": "social_automate",
+        "loom": "social_automate",
+        "template": "2. Posted Role Application (Two Looms)"
+      },
+      "automation": {
+        "titles": [
+          "Automation Engineer",
+          "AI Automation Developer",
+          "n8n Developer",
+          "Workflow Engineer",
+          "Solutions Engineer"
+        ],
+        "lead_project": "multichannel_automation",
+        "loom": "social_automate",
+        "template": "7. Automation Role (n8n + AI Workflows)"
+      }
+    },
+    "good_targets": "Seed to Series B startups, AI agencies and automation shops that hire remote in India, or remote-first global teams with open roles on Wellfound, YC Work at a Startup, LinkedIn or X hiring posts.",
+    "skip": [
+      "On-site or hybrid only roles",
+      "Unpaid or below INR 20K/month",
+      "Roles asking for 3+ years",
+      "CEOs of 100+ person companies (email the hiring manager or engineering lead instead)",
+      "Generic inboxes like hello@, info@, founders@"
+    ]
+  }
+}

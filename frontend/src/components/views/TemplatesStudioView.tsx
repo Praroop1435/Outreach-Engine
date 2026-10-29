@@ -63,8 +63,9 @@ export default function TemplatesStudioView({
   const sampleLead = {
     first_name: 'Manish',
     company: 'Clickpe',
-    role: 'SDE Intern',
-    custom_hook: 'autonomous agent workflows'
+    role: 'Co-Founder',
+    job_role: 'AI Engineer',
+    custom_hook: 'your agentic lending workflows'
   };
 
   // Switch template or create new
@@ -87,8 +88,8 @@ export default function TemplatesStudioView({
       id: 0,
       name: '',
       category: 'Cold Outreach',
-      subject_template: 'Engineering & AI systems for {{company}}: Praroop Anand',
-      body_template: 'Hi {{firstName}},\n\nSaw what you are building at {{company}} regarding {{custom_hook}}.\n\nI build production AI workflows and scalable backend systems (FastAPI, Next.js, PostgreSQL, Redis, Docker). Dropped a quick Loom demo of an enterprise intelligence platform I built, plus my portfolio:\n\nLoom: https://www.loom.com/share/5f715f784c3142e690f16f8df66f3799\nPortfolio: https://praroop.site\n\nResume attached. Would love to build a quick proof of concept if you have an active engineering backlog!\n\nBest,\nPraroop'
+      subject_template: 'Loom for {{company}}',
+      body_template: "Hi {{firstName}},\n\nBeen reading up on {{company}}, especially {{custom_hook}}.\n\nI'm Praroop, an AI engineer at Relu Consultancy. Here's a short Loom of something I shipped:\nhttps://www.loom.com/share/5f715f784c3142e690f16f8df66f3799\n\nI'm looking for a remote AI or backend role. Open to a 15 minute call this week? Happy to start with a small paid trial.\n\nPraroop\nhttps://praroop.site"
     });
   };
 
@@ -119,7 +120,8 @@ export default function TemplatesStudioView({
     return formData.subject_template
       .replace(/{{first_name}}|{{firstName}}/gi, sampleLead.first_name)
       .replace(/{{company}}/gi, sampleLead.company)
-      .replace(/{{role}}|{{job_role}}/gi, sampleLead.role)
+      .replace(/{{job_role}}|{{target_role}}/gi, sampleLead.job_role)
+      .replace(/{{role}}/gi, sampleLead.role)
       .replace(/{{custom_hook}}/gi, sampleLead.custom_hook);
   }, [formData.subject_template]);
 
@@ -127,7 +129,8 @@ export default function TemplatesStudioView({
     return formData.body_template
       .replace(/{{first_name}}|{{firstName}}/gi, sampleLead.first_name)
       .replace(/{{company}}/gi, sampleLead.company)
-      .replace(/{{role}}|{{job_role}}/gi, sampleLead.role)
+      .replace(/{{job_role}}|{{target_role}}/gi, sampleLead.job_role)
+      .replace(/{{role}}/gi, sampleLead.role)
       .replace(/{{custom_hook}}/gi, sampleLead.custom_hook);
   }, [formData.body_template]);
 
@@ -460,7 +463,7 @@ export default function TemplatesStudioView({
                   {[
                     { label: '{{first_name}}', token: '{{first_name}}' },
                     { label: '{{company}}', token: '{{company}}' },
-                    { label: '{{role}}', token: '{{role}}' },
+                    { label: '{{job_role}}', token: '{{job_role}}' },
                     { label: '{{custom_hook}}', token: '{{custom_hook}}' }
                   ].map(t => (
                     <button

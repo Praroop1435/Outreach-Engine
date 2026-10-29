@@ -166,8 +166,9 @@ def send_email(lead_id: int, req: SendEmailRequest, session: Session = Depends(g
         email_record = send_email_to_lead(
             session=session,
             lead=lead,
-            subject=req.subject,
-            body=req.body,
+            # Render again so no raw {{placeholder}} ever reaches a recipient
+            subject=render_template(req.subject, lead),
+            body=render_template(req.body, lead),
             attach_resume=req.attach_resume,
             enable_utm_tracking=req.enable_utm_tracking
         )

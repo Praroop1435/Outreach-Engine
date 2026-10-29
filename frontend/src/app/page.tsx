@@ -253,7 +253,7 @@ export default function OutreachEngineDashboard() {
   const [composeSubject, setComposeSubject] = useState('');
   const [composeBody, setComposeBody] = useState('');
   const [attachResume, setAttachResume] = useState(true);
-  const [enableUTMTracking, setEnableUTMTracking] = useState(true);
+  const [enableUTMTracking, setEnableUTMTracking] = useState(false);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [isSending, setIsSending] = useState(false);
 
@@ -442,12 +442,10 @@ export default function OutreachEngineDashboard() {
   const copyFounderPitch = (lead: Lead) => {
     const fn = lead.first_name || 'there';
     const comp = lead.company || 'your team';
-    const msg = `Hey ${fn}, saw what you are building at ${comp}!\n\n` +
-      `I build production AI agent workflows and scalable backend systems (FastAPI, Next.js, PostgreSQL, Redis, Docker). At Relu Consultancy, I ship client AI systems ranging from pgvector RAG engines to autonomous async task queues.\n\n` +
-      `Dropped a quick Loom demo of an enterprise intelligence platform I built, plus my portfolio:\n` +
-      `Loom: https://www.loom.com/share/5f715f784c3142e690f16f8df66f3799\n` +
-      `Portfolio: praroop.site\n\n` +
-      `Would love to chat or build out a proof of concept if you have an active engineering backlog!`;
+    const msg = `Hey ${fn}, been following ${comp}.\n\n` +
+      `I'm an AI engineer at Relu Consultancy, shipping production RAG, agent and backend systems for clients. Here's a short Loom of one I built for a US insurance agency:\n` +
+      `https://www.loom.com/share/5f715f784c3142e690f16f8df66f3799\n\n` +
+      `I'm looking for a remote AI or backend role. Open to a quick call? Happy to start with a small paid trial.`;
     navigator.clipboard.writeText(msg);
     showToast(`Pitch for ${lead.first_name || 'Founder'} copied to clipboard!`);
   };
@@ -562,21 +560,21 @@ export default function OutreachEngineDashboard() {
     setIsPreviewMode(false);
     
     // Choose sensible default template or custom
-    const defaultTemplate = templates.find(t => t.name.includes('Grounded') || t.name.includes('AI Startup')) || templates[0];
+    const defaultTemplate = templates.find(t => t.category === 'Cold Outreach') || templates[0];
     if (defaultTemplate) {
       setComposeTemplateId(String(defaultTemplate.id));
       applyTemplateText(defaultTemplate, lead);
     } else {
       setComposeTemplateId('');
-      setComposeSubject(`Engineering & AI systems for ${lead.company || 'your team'}: Praroop Anand`);
+      setComposeSubject(`Loom for ${lead.company || 'your team'}`);
       setComposeBody(
         `Hi ${lead.first_name || 'there'},\n\n` +
-        `I noticed what you are building at ${lead.company || 'your company'}${lead.custom_hook ? ` regarding ${lead.custom_hook}` : ''}.\n\n` +
-        `I am a full-stack engineer and AI developer (FastAPI, Next.js, PostgreSQL, Redis, Docker). Right now at Relu Consultancy, I build production AI workflows and scalable backend pipelines for real client workloads.\n\n` +
-        `Portfolio: https://praroop.site\nGitHub: https://github.com/Praroop1435\n\n` +
-        `My resume is attached for quick reference. If you have an active problem or upcoming pipeline on your roadmap, I would be glad to build a working prototype to demonstrate my approach.\n\n` +
-        `Best regards,\nPraroop Anand`
+        `I'm Praroop, an AI engineer at Relu Consultancy. I ship production AI systems (RAG, agents, async backends) for international clients. Here's a short Loom of one:\n` +
+        `https://www.loom.com/share/5f715f784c3142e690f16f8df66f3799\n\n` +
+        `I'm looking for a remote AI or backend role. Open to a 15 minute call this week? Happy to start with a small paid trial.\n\n` +
+        `Praroop\nhttps://praroop.site`
       );
+      setAttachResume(false);
     }
     setIsComposeModalOpen(true);
   };
@@ -619,25 +617,24 @@ export default function OutreachEngineDashboard() {
   const applyTemplateText = (tpl: Template, lead: Lead) => {
     const fn = lead.first_name || 'there';
     const comp = lead.company || 'your team';
-    const hook = lead.custom_hook || 'your technology roadmap';
-    const role = lead.role || 'Full-Stack Engineer';
+    // Mirrors render_template / clean_custom_hook in app/services/email_sender.py
+    const rawHook = (lead.custom_hook || '').trim().replace(/\.$/, '');
+    const hook = !rawHook || /https?:\/\/|linkedin\.com|^what you are building at/i.test(rawHook) ? 'your recent work' : rawHook;
+    const role = lead.role || 'team';
+    const jobRole = lead.notes || 'AI Engineer';
 
-    let subj = tpl.subject_template
-      .replace(/{{firstName}}/gi, fn)
-      .replace(/{{first_name}}/gi, fn)
-      .replace(/{{company}}/gi, comp)
-      .replace(/{{role}}/gi, role)
-      .replace(/{{custom_hook}}/gi, hook);
+    const fill = (text: string) => text
+      .replace(/{{\s*(firstName|first_name)\s*}}/gi, fn)
+      .replace(/{{\s*(lastName|last_name)\s*}}/gi, lead.last_name || '')
+      .replace(/{{\s*company\s*}}/gi, comp)
+      .replace(/{{\s*role\s*}}/gi, role)
+      .replace(/{{\s*(job_role|target_role)\s*}}/gi, jobRole)
+      .replace(/{{\s*custom_hook\s*}}/gi, hook);
 
-    let body = tpl.body_template
-      .replace(/{{firstName}}/gi, fn)
-      .replace(/{{first_name}}/gi, fn)
-      .replace(/{{company}}/gi, comp)
-      .replace(/{{role}}/gi, role)
-      .replace(/{{custom_hook}}/gi, hook);
-
-    setComposeSubject(subj);
-    setComposeBody(body);
+    setComposeSubject(fill(tpl.subject_template));
+    setComposeBody(fill(tpl.body_template));
+    // Resume only helps on applications; on founder cold emails it hurts deliverability
+    setAttachResume(tpl.category === 'Job Application');
   };
 
   const handleTemplateChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -674,7 +671,7 @@ export default function OutreachEngineDashboard() {
           subject: composeSubject,
           body_text: composeBody,
           attach_resume: attachResume,
-          enable_tracking: enableUTMTracking,
+          enable_utm_tracking: enableUTMTracking,
           template_id: composeTemplateId ? parseInt(composeTemplateId) : null
         })
       });
@@ -2234,7 +2231,7 @@ export default function OutreachEngineDashboard() {
                 {/* Variable Tokens Helper Chips */}
                 <div className="flex flex-wrap items-center gap-1.5 mt-2">
                   <span className="text-[11px] text-slate-400">Tokens:</span>
-                  {['{{firstName}}', '{{company}}', '{{role}}', '{{custom_hook}}'].map(tok => (
+                  {['{{firstName}}', '{{company}}', '{{job_role}}', '{{custom_hook}}'].map(tok => (
                     <button
                       key={tok}
                       type="button"
@@ -2266,7 +2263,7 @@ export default function OutreachEngineDashboard() {
                     onChange={e => setEnableUTMTracking(e.target.checked)}
                     className="rounded text-sky-600 focus:ring-sky-500"
                   />
-                  <span>Tag links with UTM tracking parameters</span>
+                  <span>Track link clicks (routes links through a redirect, may hurt inbox placement)</span>
                 </label>
               </div>
             </div>

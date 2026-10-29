@@ -14,6 +14,15 @@ from app.models import Lead, EmailMessage, LeadStatus, EmailDirection
 
 URL_REGEX = re.compile(r"(https?://[^\s<>\"'\)]+)", re.IGNORECASE)
 
+JUNK_HOOK_REGEX = re.compile(r"https?://|linkedin\.com|^what you are building at", re.IGNORECASE)
+
+def clean_custom_hook(hook: Optional[str]) -> str:
+    """Drops auto-generated hooks (sheet URLs, 'what you are building at X (city)') that read as mail merge."""
+    hook = (hook or "").strip().rstrip(".")
+    if not hook or JUNK_HOOK_REGEX.search(hook):
+        return "your recent work"
+    return hook
+
 def render_template(template_str: str, lead: Lead) -> str:
     """Renders placeholders in the template with lead attributes."""
     mapping = {
@@ -24,7 +33,7 @@ def render_template(template_str: str, lead: Lead) -> str:
         "company": lead.company or "your team",
         "role": lead.role or "team",
         "x_handle": lead.x_handle or "",
-        "custom_hook": lead.custom_hook or "your recent work",
+        "custom_hook": clean_custom_hook(lead.custom_hook),
         "email": lead.email,
         "website": lead.website_url or "",
         "job_role": lead.notes or "AI Engineer",
@@ -100,9 +109,10 @@ def send_email_to_lead(
     subject: str,
     body: str,
     attach_resume: bool = True,
-    enable_utm_tracking: bool = True,
+    enable_utm_tracking: bool = False,
     thread_id: Optional[str] = None,
-    allow_catchall: bool = False
+    allow_catchall: bool = False,
+    skip_deliverability_check: bool = False
 ) -> EmailMessage:
     """Sends an email via Gmail SMTP with pre-flight MX verification, disguised UTM link tracking & PDF resume attachment."""
     if not settings.GMAIL_APP_PASSWORD:
@@ -111,16 +121,17 @@ def send_email_to_lead(
         raise ValueError("GMAIL_USER is not configured in .env")
 
     # 1. Pre-flight Deliverability & MX Verification
-    verif = verify_email_deliverability(lead.email, check_mx=True)
-    is_valid = verif["valid"] or (allow_catchall and verif.get("bouncify_status") in ("accept all", "accept_all", "accept_all_catchall"))
-    if not is_valid:
-        lead.status = LeadStatus.INVALID_EMAIL.value
-        session.add(lead)
-        session.commit()
-        err_msg = f"Pre-flight deliverability check failed for '{lead.email}': {verif.get('error')}"
-        if verif.get("suggestion"):
-            err_msg += f" (Suggested alternative: {verif['suggestion']})"
-        raise ValueError(err_msg)
+    if not skip_deliverability_check:
+        verif = verify_email_deliverability(lead.email, check_mx=True)
+        is_valid = verif["valid"] or (allow_catchall and verif.get("bouncify_status") in ("accept all", "accept_all", "accept_all_catchall"))
+        if not is_valid:
+            lead.status = LeadStatus.INVALID_EMAIL.value
+            session.add(lead)
+            session.commit()
+            err_msg = f"Pre-flight deliverability check failed for '{lead.email}': {verif.get('error')}"
+            if verif.get("suggestion"):
+                err_msg += f" (Suggested alternative: {verif['suggestion']})"
+            raise ValueError(err_msg)
 
     import uuid
     custom_msg_id = f"<{uuid.uuid4()}@mail.outreach.praroop.site>"
