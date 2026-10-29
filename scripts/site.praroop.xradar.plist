@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  X Radar: runs scripts/x_job_monitor.py every 45 minutes while the Mac is awake.
+  Install:   cp scripts/site.praroop.xradar.plist ~/Library/LaunchAgents/ && launchctl load ~/Library/LaunchAgents/site.praroop.xradar.plist
+  Remove:    launchctl unload ~/Library/LaunchAgents/site.praroop.xradar.plist && rm ~/Library/LaunchAgents/site.praroop.xradar.plist
+  Log:       ~/Library/Logs/xradar.log
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>site.praroop.xradar</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/praroopanand/Realm/Code/Personal Outrech/.venv/bin/python</string>
+    <string>/Users/praroopanand/Realm/Code/Personal Outrech/scripts/x_job_monitor.py</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/praroopanand/Realm/Code/Personal Outrech</string>
+  <key>StartInterval</key>
+  <integer>2700</integer>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>/Users/praroopanand/Library/Logs/xradar.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/praroopanand/Library/Logs/xradar.log</string>
+</dict>
+</plist>

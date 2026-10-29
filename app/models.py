@@ -91,6 +91,37 @@ class EmailTemplate(SQLModel, table=True):
     category: str = Field(default="Cold Outreach")
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
+class XJobStatus(str, Enum):
+    NEW = "NEW"
+    SAVED = "SAVED"
+    APPLIED = "APPLIED"
+    DISMISSED = "DISMISSED"
+
+class XJobPost(SQLModel, table=True):
+    """A hiring post found on X by the background monitor (scripts/x_job_monitor.py)."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    url: str = Field(unique=True, index=True)
+    handle: str = Field(index=True)
+    author_name: Optional[str] = None
+    text: str
+    links_json: str = "[]"
+    query: Optional[str] = None
+    posted_at: Optional[datetime] = Field(default=None, index=True)
+    score: int = Field(default=0, index=True)
+    tags: str = ""
+    pay: Optional[str] = None
+    status: str = Field(default=XJobStatus.NEW.value, index=True)
+    already_contacted: bool = False
+    first_seen_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+class XScanRun(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    started_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    finished_at: Optional[datetime] = None
+    posts_seen: int = 0
+    new_matches: int = 0
+    error: Optional[str] = None
+
 # --- Pydantic Request / Response Schemas ---
 
 class LeadCreate(BaseModel):

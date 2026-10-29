@@ -8,6 +8,7 @@ import {
   Layers,
   MousePointerClick,
   Paperclip,
+  Radar,
   SendHorizontal,
   Share2,
   Upload,
@@ -20,6 +21,7 @@ export interface SidebarCounts {
   templates: number;
   clicks: number;
   inbox: number;
+  radar: number;
 }
 
 interface NavItem {
@@ -36,6 +38,7 @@ const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
     items: [
       { id: 'pipeline', label: 'Pipeline', icon: LayoutDashboard, count: c => c.pipeline },
       { id: 'founder_dms', label: 'Founder DMs', icon: SendHorizontal, count: c => c.founders },
+      { id: 'x_radar', label: 'X Radar', icon: Radar, count: c => c.radar || undefined, alert: true },
       { id: 'inbox', label: 'Inbox', icon: Inbox, count: c => c.inbox || undefined, alert: true },
     ],
   },

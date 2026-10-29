@@ -49,6 +49,7 @@ import { formatRelative, parseApiDate } from '@/lib/format';
 import { tagLinks } from '@/lib/utm';
 import { AnimatedNumber, Avatar, EmptyState, SegmentedTabs, SkeletonRows, StatusBadge, Toaster, useToasts } from '@/components/ui/primitives';
 import ClicksTrackingView from '@/components/views/ClicksTrackingView';
+import XRadarView, { type XRadarSummary } from '@/components/views/XRadarView';
 import InboxRepliesView from '@/components/views/InboxRepliesView';
 import SystemSettingsView from '@/components/views/SystemSettingsView';
 
@@ -151,7 +152,7 @@ interface ResumeStatus {
 
 const BACKEND_BASE = (process.env.NEXT_PUBLIC_BACKEND_URL || "https://outreach-engine-h5lx.onrender.com").replace(/\/$/, "");
 
-export type SidebarTab = 'pipeline' | 'founder_dms' | 'templates' | 'clicks' | 'inbox' | 'settings';
+export type SidebarTab = 'pipeline' | 'founder_dms' | 'x_radar' | 'templates' | 'clicks' | 'inbox' | 'settings';
 
 // Resilient API Fetch Helper: Calls Render directly in production with Vercel proxy fallback
 async function apiFetch(endpoint: string, options?: RequestInit): Promise<Response> {
@@ -211,6 +212,16 @@ export default function OutreachEngineDashboard() {
   });
 
   const [replies, setReplies] = useState<ProspectReply[]>([]);
+  const [xRadarNew, setXRadarNew] = useState(0);
+  const handleXRadarSummary = useCallback((s: XRadarSummary) => setXRadarNew(s.counts.NEW || 0), []);
+
+  // Keeps the sidebar badge current even when the X Radar page is closed
+  useEffect(() => {
+    const poll = () => apiFetch('/api/x-jobs/summary').then(r => (r.ok ? r.json() : null)).then(s => s && handleXRadarSummary(s)).catch(() => {});
+    poll();
+    const t = setInterval(poll, 5 * 60_000);
+    return () => clearInterval(t);
+  }, [handleXRadarSummary]);
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncingMailbox, setIsSyncingMailbox] = useState(false);
@@ -472,7 +483,7 @@ export default function OutreachEngineDashboard() {
       const isShare = params.get('view') === 'share';
       setShareMode(isShare);
       const urlTab = params.get('tab') as SidebarTab | null;
-      const allowedTabs = isShare ? SHARE_TABS : ['pipeline', 'founder_dms', 'templates', 'clicks', 'inbox', 'settings'];
+      const allowedTabs = isShare ? SHARE_TABS : ['pipeline', 'founder_dms', 'x_radar', 'templates', 'clicks', 'inbox', 'settings'];
       if (urlTab && allowedTabs.includes(urlTab)) {
         setActiveSidebarNav(urlTab);
       }
@@ -877,6 +888,7 @@ export default function OutreachEngineDashboard() {
       templates: templates.length,
       clicks: analytics.total_link_clicks,
       inbox: replyCount,
+      radar: xRadarNew,
     },
     backendOnline,
     resumeFilename: resumeStatus.filename,
@@ -970,6 +982,10 @@ export default function OutreachEngineDashboard() {
         </header>
 
         <main key={activeSidebarNav} className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 py-6 lg:py-8 animate-fade-up">
+          {activeSidebarNav === 'x_radar' && (
+            <XRadarView apiFetch={apiFetch} showToast={showToast} onSummary={handleXRadarSummary} />
+          )}
+
           {activeSidebarNav === 'templates' && (
             <TemplatesStudioView templates={templates} fetchData={fetchData} showToast={showToast} apiFetch={apiFetch} />
           )}
@@ -1564,6 +1580,7 @@ export default function OutreachEngineDashboard() {
 const PAGE_META: Record<SidebarTab, { title: string; subtitle: string }> = {
   pipeline: { title: 'Pipeline', subtitle: 'Everyone you are emailing, where they stand, and who needs a follow-up' },
   founder_dms: { title: 'Founder DMs', subtitle: 'Founders from the sheet with X handles, ready for a short DM' },
+  x_radar: { title: 'X Radar', subtitle: 'Remote AI, backend and full-stack internships and junior roles found on X' },
   templates: { title: 'Templates', subtitle: 'Short, Loom-first emails for remote AI, backend and automation roles' },
   clicks: { title: 'Link clicks', subtitle: 'Who opened your Loom or portfolio, when tracking is on' },
   inbox: { title: 'Inbox', subtitle: 'Replies and bounces synced from Gmail' },
