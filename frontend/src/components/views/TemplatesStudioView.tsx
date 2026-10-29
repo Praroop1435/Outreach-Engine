@@ -1,20 +1,8 @@
 "use client";
 
-import React, { useState, useMemo } from 'react';
-import { 
-  Layers, 
-  Plus, 
-  Edit3, 
-  Trash2, 
-  Copy, 
-  Eye, 
-  Check, 
-  AlertTriangle, 
-  Sparkles, 
-  FileText,
-  Search,
-  CheckCircle2
-} from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, Check, CheckCircle2, Copy, Layers, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
+import { EmptyState, SegmentedTabs } from '@/components/ui/primitives';
 
 export interface Template {
   id: number;
@@ -31,154 +19,120 @@ interface TemplatesStudioViewProps {
   apiFetch: (endpoint: string, options?: RequestInit) => Promise<Response>;
 }
 
-export default function TemplatesStudioView({
-  templates,
-  fetchData,
-  showToast,
-  apiFetch
-}: TemplatesStudioViewProps) {
-  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(templates[0] || null);
-  const [categoryFilter, setCategoryFilter] = useState('ALL');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isCreatingNew, setIsCreatingNew] = useState(false);
+type FormState = Omit<Template, 'id'> & { id: number };
+
+const EMPTY_FORM: FormState = {
+  id: 0,
+  name: '',
+  category: 'Cold Outreach',
+  subject_template: 'Loom for {{company}}',
+  body_template:
+    "Hi {{firstName}},\n\nBeen reading up on {{company}}, especially {{custom_hook}}.\n\nI'm Praroop, an AI engineer at Relu Consultancy. Here's a short Loom of something I shipped:\nhttps://www.loom.com/share/5f715f784c3142e690f16f8df66f3799\n\nI'm looking for a remote AI or backend role. Open to a 15 minute call this week? Happy to start with a small paid trial.\n\nPraroop\nhttps://praroop.site",
+};
+
+const CATEGORIES = ['Cold Outreach', 'Job Application', 'Follow-up', 'Custom'];
+const TOKENS = ['{{firstName}}', '{{company}}', '{{job_role}}', '{{custom_hook}}'];
+
+const SAMPLE = {
+  firstName: 'Manish',
+  company: 'Clickpe',
+  role: 'Co-Founder',
+  job_role: 'Backend Engineer',
+  custom_hook: 'your agentic lending workflows',
+};
+
+function fill(text: string) {
+  return text
+    .replace(/{{\s*(firstName|first_name)\s*}}/gi, SAMPLE.firstName)
+    .replace(/{{\s*company\s*}}/gi, SAMPLE.company)
+    .replace(/{{\s*(job_role|target_role)\s*}}/gi, SAMPLE.job_role)
+    .replace(/{{\s*role\s*}}/gi, SAMPLE.role)
+    .replace(/{{\s*custom_hook\s*}}/gi, SAMPLE.custom_hook);
+}
+
+function toForm(t: Template): FormState {
+  return { id: t.id, name: t.name, category: t.category, subject_template: t.subject_template, body_template: t.body_template };
+}
+
+export default function TemplatesStudioView({ templates, fetchData, showToast, apiFetch }: TemplatesStudioViewProps) {
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [savedSnapshot, setSavedSnapshot] = useState<string>(JSON.stringify(EMPTY_FORM));
+  const [category, setCategory] = useState('ALL');
+  const [query, setQuery] = useState('');
   const [isSaving, setIsSaving] = useState(false);
-  const [copiedId, setCopiedId] = useState<number | null>(null);
+  const [view, setView] = useState<'edit' | 'preview'>('edit');
 
-  // Form State
-  const [formData, setFormData] = useState<{
-    id: number;
-    name: string;
-    category: string;
-    subject_template: string;
-    body_template: string;
-  }>({
-    id: 0,
-    name: '',
-    category: 'Cold Outreach',
-    subject_template: '',
-    body_template: ''
-  });
-
-  // Sample lead data for real-time live preview
-  const sampleLead = {
-    first_name: 'Manish',
-    company: 'Clickpe',
-    role: 'Co-Founder',
-    job_role: 'AI Engineer',
-    custom_hook: 'your agentic lending workflows'
+  const select = (t: Template) => {
+    setSelectedId(t.id);
+    setForm(toForm(t));
+    setSavedSnapshot(JSON.stringify(toForm(t)));
   };
 
-  // Switch template or create new
-  const handleSelectTemplate = (tpl: Template) => {
-    setIsCreatingNew(false);
-    setSelectedTemplate(tpl);
-    setFormData({
-      id: tpl.id,
-      name: tpl.name,
-      category: tpl.category,
-      subject_template: tpl.subject_template,
-      body_template: tpl.body_template
-    });
+  const startNew = () => {
+    setSelectedId(0);
+    setForm(EMPTY_FORM);
+    setSavedSnapshot('');
+    setView('edit');
   };
 
-  const handleStartNew = () => {
-    setIsCreatingNew(true);
-    setSelectedTemplate(null);
-    setFormData({
-      id: 0,
-      name: '',
-      category: 'Cold Outreach',
-      subject_template: 'Loom for {{company}}',
-      body_template: "Hi {{firstName}},\n\nBeen reading up on {{company}}, especially {{custom_hook}}.\n\nI'm Praroop, an AI engineer at Relu Consultancy. Here's a short Loom of something I shipped:\nhttps://www.loom.com/share/5f715f784c3142e690f16f8df66f3799\n\nI'm looking for a remote AI or backend role. Open to a 15 minute call this week? Happy to start with a small paid trial.\n\nPraroop\nhttps://praroop.site"
-    });
-  };
-
-  // Sync initial selection
-  React.useEffect(() => {
-    if (!isCreatingNew && templates.length > 0 && (!selectedTemplate || !templates.some(t => t.id === selectedTemplate.id))) {
-      handleSelectTemplate(templates[0]);
-    }
+  // Keep a valid selection whenever the list changes (first load, cache refresh, delete)
+  useEffect(() => {
+    if (selectedId === 0) return;
+    const current = templates.find(t => t.id === selectedId);
+    if (current) return;
+    if (templates[0]) select(templates[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templates]);
 
-  // Insert token pill
-  const handleInsertToken = (token: string, targetField: 'subject' | 'body') => {
-    if (targetField === 'subject') {
-      setFormData(prev => ({ ...prev, subject_template: prev.subject_template + ` ${token}` }));
-    } else {
-      setFormData(prev => ({ ...prev, body_template: prev.body_template + ` ${token}` }));
-    }
-  };
-
-  // Check for forbidden dashes (em dash, en dash, spaced hyphens)
-  const hasForbiddenDashes = useMemo(() => {
-    const text = `${formData.subject_template} ${formData.body_template}`;
-    return /[\u2014\u2013]|(\s-\s)/.test(text);
-  }, [formData.subject_template, formData.body_template]);
-
-  // Rendered live preview text
-  const renderedSubject = useMemo(() => {
-    return formData.subject_template
-      .replace(/{{first_name}}|{{firstName}}/gi, sampleLead.first_name)
-      .replace(/{{company}}/gi, sampleLead.company)
-      .replace(/{{job_role}}|{{target_role}}/gi, sampleLead.job_role)
-      .replace(/{{role}}/gi, sampleLead.role)
-      .replace(/{{custom_hook}}/gi, sampleLead.custom_hook);
-  }, [formData.subject_template]);
-
-  const renderedBody = useMemo(() => {
-    return formData.body_template
-      .replace(/{{first_name}}|{{firstName}}/gi, sampleLead.first_name)
-      .replace(/{{company}}/gi, sampleLead.company)
-      .replace(/{{job_role}}|{{target_role}}/gi, sampleLead.job_role)
-      .replace(/{{role}}/gi, sampleLead.role)
-      .replace(/{{custom_hook}}/gi, sampleLead.custom_hook);
-  }, [formData.body_template]);
-
-  // Filter templates list
-  const filteredTemplates = useMemo(() => {
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
     return templates.filter(t => {
-      if (categoryFilter !== 'ALL' && t.category !== categoryFilter) return false;
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        return t.name.toLowerCase().includes(q) || t.subject_template.toLowerCase().includes(q) || t.body_template.toLowerCase().includes(q);
-      }
-      return true;
+      if (category !== 'ALL' && t.category !== category) return false;
+      if (!q) return true;
+      return [t.name, t.subject_template, t.body_template].some(v => v.toLowerCase().includes(q));
     });
-  }, [templates, categoryFilter, searchQuery]);
+  }, [templates, category, query]);
 
-  // Save template
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.name.trim() || !formData.subject_template.trim() || !formData.body_template.trim()) {
-      showToast('All template fields are required', 'error');
+  const categoryTabs = useMemo(() => {
+    const present = CATEGORIES.filter(c => templates.some(t => t.category === c));
+    return [{ id: 'ALL', label: 'All', count: templates.length }, ...present.map(c => ({ id: c, label: c.replace('Job Application', 'Applications'), count: templates.filter(t => t.category === c).length }))];
+  }, [templates]);
+
+  const dirty = JSON.stringify(form) !== savedSnapshot;
+  const words = form.body_template.trim() ? form.body_template.trim().split(/\s+/).length : 0;
+  const links = (form.body_template.match(/https?:\/\//g) || []).length;
+  const hasDashes = /[—–]/.test(form.subject_template + form.body_template);
+  const hasLoom = /loom\.com/.test(form.body_template);
+  const checks = [
+    { ok: words > 0 && words <= 120, label: `${words} words`, hint: 'under 120' },
+    { ok: links <= 3, label: `${links} links`, hint: '3 or fewer' },
+    { ok: hasLoom, label: hasLoom ? 'Has a Loom' : 'No Loom', hint: 'add one' },
+    { ok: !hasDashes, label: hasDashes ? 'Has em dashes' : 'No em dashes', hint: 'remove them' },
+  ];
+
+  const insertToken = (token: string) => setForm(f => ({ ...f, body_template: `${f.body_template}${f.body_template.endsWith(' ') || !f.body_template ? '' : ' '}${token}` }));
+
+  const save = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!form.name.trim() || !form.subject_template.trim() || !form.body_template.trim()) {
+      showToast('Give it a name, subject and body first', 'error');
       return;
     }
-
     setIsSaving(true);
     try {
-      let res;
-      if (formData.id) {
-        res = await apiFetch(`/api/templates/${formData.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(formData)
-        });
-      } else {
-        res = await apiFetch('/api/templates', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(formData)
-        });
-      }
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || 'Failed to save template');
-      }
-
-      showToast(`Template "${formData.name}" saved!`);
+      const res = await apiFetch(form.id ? `/api/templates/${form.id}` : '/api/templates', {
+        method: form.id ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Could not save template');
+      showToast(`Saved "${form.name}"`);
+      setSelectedId(data.id ?? form.id);
+      setForm(f => ({ ...f, id: data.id ?? f.id }));
+      setSavedSnapshot(JSON.stringify({ ...form, id: data.id ?? form.id }));
       await fetchData();
-      setIsCreatingNew(false);
     } catch (err: any) {
       showToast(err.message, 'error');
     } finally {
@@ -186,367 +140,176 @@ export default function TemplatesStudioView({
     }
   };
 
-  // Delete template
-  const handleDelete = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this template permanently?')) return;
+  const remove = async () => {
+    if (!form.id || !confirm(`Delete "${form.name}"?`)) return;
     try {
-      const res = await apiFetch(`/api/templates/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Failed to delete template');
-      showToast('Template deleted successfully');
+      const res = await apiFetch(`/api/templates/${form.id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Could not delete template');
+      showToast('Template deleted');
+      setSelectedId(null);
       await fetchData();
     } catch (err: any) {
       showToast(err.message, 'error');
     }
   };
 
-  // Quick copy raw text
-  const handleCopyRaw = (text: string, id: number) => {
-    navigator.clipboard.writeText(text);
-    setCopiedId(id);
-    showToast('Template body copied to clipboard');
-    setTimeout(() => setCopiedId(null), 2000);
+  const duplicate = () => {
+    setSelectedId(0);
+    setForm(f => ({ ...f, id: 0, name: `${f.name} (copy)` }));
+    setSavedSnapshot('');
   };
 
+  // Cmd/Ctrl+S saves
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        save();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
   return (
-    <div className="space-y-6">
-      {/* Top Banner / Metrics */}
-      <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
-          <div className="flex items-center justify-between text-xs font-semibold text-slate-500 uppercase tracking-wider">
-            <span>Active Templates</span>
-            <Layers className="w-4 h-4 text-amber-500" />
-          </div>
-          <div className="text-3xl font-bold text-slate-950 mt-2 font-mono">
-            {templates.length}
-          </div>
-          <p className="text-xs text-slate-400 mt-1">Pre-tested high-converting cold pitches</p>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
-          <div className="flex items-center justify-between text-xs font-semibold text-slate-500 uppercase tracking-wider">
-            <span>Formatting Guardrail</span>
-            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-          </div>
-          <div className="text-lg font-bold text-emerald-600 mt-2 flex items-center gap-1.5">
-            <span>Zero Em Dashes</span>
-          </div>
-          <p className="text-xs text-slate-400 mt-1">Strict human tone enforcement</p>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex items-center justify-between">
-          <div>
-            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Loom &amp; Proof of Work</div>
-            <div className="text-xs font-mono text-sky-600 font-bold mt-1.5 truncate max-w-[200px]">
-              InsightFlow + Portfolio
-            </div>
-            <p className="text-[11px] text-slate-400 mt-0.5">Embedded in default drafts</p>
-          </div>
-          <button
-            type="button"
-            onClick={handleStartNew}
-            className="px-3.5 py-2 text-xs font-semibold text-white bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 rounded-xl shadow-xs transition shrink-0 flex items-center gap-1"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>New Pitch</span>
-          </button>
-        </div>
-      </section>
-
-      {/* Main 2-Column Studio Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left Column: Template Cards List (4 cols) */}
-        <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 space-y-4">
+    <div className="grid gap-5 lg:grid-cols-[340px_minmax(0,1fr)]">
+      {/* Library */}
+      <aside className="card flex flex-col overflow-hidden lg:sticky lg:top-24 lg:max-h-[calc(100vh-8rem)]">
+        <div className="space-y-3 border-b border-slate-100 p-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-slate-900">Template Library</h3>
-            <button
-              type="button"
-              onClick={handleStartNew}
-              className="text-xs font-semibold text-amber-600 hover:text-amber-700 flex items-center gap-1"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Create New</span>
+            <span className="text-[13px] font-semibold text-slate-900">Library</span>
+            <button type="button" onClick={startNew} className="btn btn-secondary btn-sm">
+              <Plus className="h-3.5 w-3.5" />
+              New
             </button>
           </div>
-
-          {/* Search bar */}
           <div className="relative">
-            <Search className="w-3.5 h-3.5 absolute left-3 top-3 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search templates or subjects..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-amber-500 font-medium"
-            />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+            <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search templates" className="input h-9 py-0 pl-8" />
           </div>
-
-          {/* Category Filter Pills */}
-          <div className="flex flex-wrap gap-1.5 text-xs">
-            {['ALL', 'Cold Outreach', 'Follow-up', 'Job Application'].map(cat => (
-              <button
-                key={cat}
-                type="button"
-                onClick={() => setCategoryFilter(cat)}
-                className={`px-2.5 py-1 rounded-lg font-medium transition ${
-                  categoryFilter === cat
-                    ? 'bg-amber-100 text-amber-900 font-bold border border-amber-300'
-                    : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200'
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
-
-          {/* Template Cards Scroll */}
-          <div className="space-y-2.5 max-h-[640px] overflow-y-auto pr-1">
-            {filteredTemplates.length === 0 ? (
-              <div className="text-center py-12 text-slate-400 text-xs border border-dashed border-slate-200 rounded-xl p-4">
-                No templates match this filter
-              </div>
-            ) : (
-              filteredTemplates.map(tpl => {
-                const isSelected = !isCreatingNew && selectedTemplate?.id === tpl.id;
-                return (
-                  <div
-                    key={tpl.id}
-                    onClick={() => handleSelectTemplate(tpl)}
-                    className={`p-3.5 rounded-xl border text-xs cursor-pointer transition relative group ${
-                      isSelected
-                        ? 'bg-amber-50/70 border-amber-400 ring-2 ring-amber-500/10 shadow-xs'
-                        : 'bg-white border-slate-200 hover:border-slate-300'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="font-bold text-slate-900 truncate">
-                        {tpl.name}
-                      </div>
-                      <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 font-mono text-[10px] shrink-0 font-medium">
-                        {tpl.category}
-                      </span>
-                    </div>
-
-                    <div className="text-[11px] text-slate-600 mt-1 font-medium truncate">
-                      Subj: <span className="text-slate-800">{tpl.subject_template}</span>
-                    </div>
-
-                    <p className="text-[11px] text-slate-500 mt-1.5 line-clamp-2 leading-relaxed">
-                      {tpl.body_template}
-                    </p>
-
-                    <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-100 text-[10px] text-slate-400">
-                      <span>{tpl.body_template.split(/\s+/).length} words</span>
-                      <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition">
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); handleCopyRaw(tpl.body_template, tpl.id); }}
-                          className="p-1 hover:text-slate-700 rounded"
-                          title="Copy raw template"
-                        >
-                          {copiedId === tpl.id ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); handleDelete(tpl.id); }}
-                          className="p-1 hover:text-rose-600 rounded"
-                          title="Delete template"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
+          <SegmentedTabs tabs={categoryTabs} value={category} onChange={setCategory} />
         </div>
 
-        {/* Right Column: Editor & Real-Time Preview (7 cols) */}
-        <div className="lg:col-span-7 bg-white rounded-2xl border border-slate-200/80 shadow-xs p-6 space-y-6">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-            <div>
-              <h3 className="text-base font-bold text-slate-900">
-                {isCreatingNew ? 'Create New Pitch Template' : `Editing: ${formData.name || 'Template'}`}
-              </h3>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Variables are auto-replaced with contact metadata during dispatch
-              </p>
+        <div className="flex-1 overflow-y-auto p-2">
+          {filtered.length === 0 ? (
+            <EmptyState icon={<Layers className="h-5 w-5" />} title="No templates" description="Nothing matches this filter." />
+          ) : (
+            <div className="stagger space-y-1">
+              {filtered.map((t, i) => {
+                const active = t.id === selectedId;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => select(t)}
+                    style={{ '--i': i } as React.CSSProperties}
+                    className={`w-full rounded-xl px-3 py-2.5 text-left ${active ? 'bg-brand-50 ring-1 ring-brand-200' : 'hover:bg-slate-50'}`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className={`truncate text-[13px] font-medium ${active ? 'text-brand-800' : 'text-slate-800'}`}>{t.name}</span>
+                      <span className="shrink-0 text-[11px] text-slate-400">{t.category.replace('Job Application', 'Application')}</span>
+                    </div>
+                    <div className="mt-0.5 truncate text-xs text-slate-400">{t.subject_template}</div>
+                  </button>
+                );
+              })}
             </div>
-            {formData.id > 0 && (
-              <button
-                type="button"
-                onClick={() => handleDelete(formData.id)}
-                className="text-xs text-rose-600 hover:text-rose-700 font-semibold flex items-center gap-1 p-1"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Delete</span>
-              </button>
-            )}
+          )}
+        </div>
+      </aside>
+
+      {/* Editor */}
+      <form onSubmit={save} className="card flex min-w-0 flex-col">
+        <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-5 py-4">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <h2 className="truncate text-[15px] font-semibold tracking-tight text-slate-900">{form.id ? form.name || 'Untitled' : 'New template'}</h2>
+              {dirty && <span className="chip border-amber-200 bg-amber-50 text-amber-700 animate-fade-in">Unsaved</span>}
+            </div>
+            <p className="text-xs text-slate-400">Placeholders are filled from each contact when you send</p>
           </div>
+          <SegmentedTabs tabs={[{ id: 'edit', label: 'Write' }, { id: 'preview', label: 'Preview' }]} value={view} onChange={id => setView(id as 'edit' | 'preview')} />
+        </div>
 
-          <form onSubmit={handleSave} className="space-y-4">
-            {/* Template Name & Category */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">
-                  Template Name <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={e => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="e.g. Founder Quick Pitch (AI Systems)"
-                  className="w-full px-3 py-2 text-xs bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/10 font-semibold text-slate-900"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">
-                  Category
-                </label>
-                <select
-                  value={formData.category}
-                  onChange={e => setFormData({ ...formData, category: e.target.value })}
-                  className="w-full px-3 py-2 text-xs bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/10 font-medium text-slate-900"
-                >
-                  <option value="Cold Outreach">Cold Outreach</option>
-                  <option value="Follow-up">Follow-up</option>
-                  <option value="Job Application">Job Application</option>
-                  <option value="Founder X DM">Founder X DM</option>
-                  <option value="Custom">Custom</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Subject Template */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-xs font-semibold text-slate-700">
-                  Subject Line Template <span className="text-rose-500">*</span>
-                </label>
-                <div className="flex items-center gap-1 text-[10px]">
-                  <span className="text-slate-400">Insert:</span>
-                  <button
-                    type="button"
-                    onClick={() => handleInsertToken('{{company}}', 'subject')}
-                    className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-mono"
-                  >
-                    {"{{company}}"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleInsertToken('{{role}}', 'subject')}
-                    className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-mono"
-                  >
-                    {"{{role}}"}
-                  </button>
+        <div className="flex-1 space-y-4 px-5 py-5">
+          {view === 'edit' ? (
+            <div key="edit" className="space-y-4 animate-fade-in">
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_200px]">
+                <div>
+                  <label className="label">Name</label>
+                  <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Founder cold email" className="input" />
+                </div>
+                <div>
+                  <label className="label">Category</label>
+                  <select value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} className="input">
+                    {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
                 </div>
               </div>
-              <input
-                type="text"
-                value={formData.subject_template}
-                onChange={e => setFormData({ ...formData, subject_template: e.target.value })}
-                placeholder="e.g. Engineering & AI systems for {{company}}: Praroop Anand"
-                className="w-full px-3 py-2 text-xs bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/10 font-medium text-slate-900"
-              />
-            </div>
-
-            {/* Variable Token Quick-Pills for Body */}
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-semibold text-slate-700">
-                  Email Body Template <span className="text-rose-500">*</span>
-                </label>
-                <div className="flex flex-wrap items-center gap-1 text-[10px]">
-                  <span className="text-slate-400 font-medium">Click to insert:</span>
-                  {[
-                    { label: '{{first_name}}', token: '{{first_name}}' },
-                    { label: '{{company}}', token: '{{company}}' },
-                    { label: '{{job_role}}', token: '{{job_role}}' },
-                    { label: '{{custom_hook}}', token: '{{custom_hook}}' }
-                  ].map(t => (
-                    <button
-                      key={t.label}
-                      type="button"
-                      onClick={() => handleInsertToken(t.token, 'body')}
-                      className="px-1.5 py-0.5 rounded-md bg-amber-50 hover:bg-amber-100 text-amber-900 font-mono border border-amber-200 transition"
-                    >
-                      {t.label}
+              <div>
+                <label className="label">Subject</label>
+                <input value={form.subject_template} onChange={e => setForm({ ...form, subject_template: e.target.value })} placeholder="Loom for {{company}}" className="input font-medium" />
+              </div>
+              <div>
+                <label className="label">Body</label>
+                <textarea rows={14} value={form.body_template} onChange={e => setForm({ ...form, body_template: e.target.value })} className="input" />
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <span className="text-[11px] text-slate-400">Insert</span>
+                  {TOKENS.map(tok => (
+                    <button key={tok} type="button" onClick={() => insertToken(tok)} className="chip border-slate-200 bg-white font-mono text-slate-600 hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700">
+                      {tok}
                     </button>
                   ))}
                 </div>
               </div>
-              <textarea
-                rows={9}
-                value={formData.body_template}
-                onChange={e => setFormData({ ...formData, body_template: e.target.value })}
-                placeholder="Compose your personalized outreach message here..."
-                className="w-full p-3.5 text-xs bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/10 font-sans leading-relaxed text-slate-900"
-              />
             </div>
-
-            {/* Dash Guardrail Alert */}
-            {hasForbiddenDashes && (
-              <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl text-xs text-amber-900 flex items-start gap-2">
-                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                <div>
-                  <span className="font-bold">Human Tone Warning:</span> Forbidden dash detected (em dash &ldquo;—&rdquo;, en dash &ldquo;–&rdquo;, or spaced hyphen &ldquo; - &rdquo;).
-                  Please remove them so messages sound completely natural and human.
+          ) : (
+            <div key="preview" className="animate-fade-in">
+              <div className="overflow-hidden rounded-xl ring-1 ring-slate-200/80">
+                <div className="space-y-1 border-b border-slate-100 bg-slate-50/70 px-4 py-3 text-[13px]">
+                  <div><span className="text-slate-400">To </span><span className="text-slate-700">{SAMPLE.firstName} at {SAMPLE.company}</span></div>
+                  <div className="font-semibold text-slate-900">{fill(form.subject_template) || 'No subject'}</div>
                 </div>
+                <div className="whitespace-pre-wrap px-4 py-4 text-[13px] leading-relaxed text-slate-800">{fill(form.body_template)}</div>
               </div>
-            )}
-
-            {/* Live Rendered Preview Card */}
-            <div className="p-4 bg-slate-50/90 rounded-xl border border-slate-200/90 space-y-2">
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-bold text-slate-700 flex items-center gap-1.5">
-                  <Eye className="w-3.5 h-3.5 text-sky-600" />
-                  Live Rendered Preview
-                </span>
-                <span className="text-[10px] font-mono text-slate-400">
-                  Sample: {sampleLead.first_name} @ {sampleLead.company}
-                </span>
-              </div>
-              <div className="bg-white p-3.5 rounded-lg border border-slate-200 text-xs space-y-2 font-sans">
-                <div className="font-bold text-slate-900">
-                  Subject: <span className="font-semibold text-slate-700">{renderedSubject}</span>
-                </div>
-                <div className="text-slate-800 whitespace-pre-wrap leading-relaxed text-[11px] pt-1 border-t border-slate-100">
-                  {renderedBody}
-                </div>
-              </div>
+              <p className="mt-2 text-[11px] text-slate-400">Sample contact: {SAMPLE.firstName}, {SAMPLE.role} at {SAMPLE.company}, applying for {SAMPLE.job_role}</p>
             </div>
+          )}
 
-            {/* Actions */}
-            <div className="flex items-center justify-end gap-2 pt-2">
-              {isCreatingNew && (
-                <button
-                  type="button"
-                  onClick={() => setIsCreatingNew(false)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition"
-                >
-                  Cancel
-                </button>
-              )}
-              <button
-                type="submit"
-                disabled={isSaving}
-                className="px-5 py-2 text-xs font-semibold text-white bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 rounded-xl shadow-xs transition disabled:opacity-60 flex items-center gap-1.5"
-              >
-                {isSaving ? (
-                  <span>Saving...</span>
-                ) : (
-                  <>
-                    <Check className="w-3.5 h-3.5" />
-                    <span>{isCreatingNew ? 'Create Template' : 'Save Changes'}</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </form>
+          {/* Guardrails */}
+          <div className="flex flex-wrap gap-2">
+            {checks.map(c => (
+              <span key={c.label} className={`chip transition-colors ${c.ok ? 'border-emerald-100 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
+                {c.ok ? <CheckCircle2 className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
+                {c.label}
+                {!c.ok && <span className="text-amber-600/80">, {c.hint}</span>}
+              </span>
+            ))}
+          </div>
         </div>
-      </div>
+
+        <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 bg-slate-50/50 px-5 py-3 rounded-b-2xl">
+          {form.id ? (
+            <>
+              <button type="button" onClick={remove} className="btn btn-danger btn-sm">
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete
+              </button>
+              <button type="button" onClick={duplicate} className="btn btn-ghost btn-sm">
+                <Copy className="h-3.5 w-3.5" />
+                Duplicate
+              </button>
+            </>
+          ) : null}
+          <span className="ml-auto hidden sm:inline-flex items-center gap-1 text-[11px] text-slate-400">
+            <span className="kbd">⌘</span><span className="kbd">S</span> to save
+          </span>
+          <button type="submit" disabled={isSaving || !dirty} className="btn btn-primary min-w-[110px]">
+            {isSaving ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+            {isSaving ? 'Saving' : form.id ? 'Save changes' : 'Create'}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

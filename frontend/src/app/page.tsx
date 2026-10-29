@@ -41,6 +41,10 @@ import {
 } from 'lucide-react';
 
 import TemplatesStudioView from '@/components/views/TemplatesStudioView';
+import { SidebarContent } from '@/components/shell/Sidebar';
+import { Drawer, Modal, useLastDefined } from '@/components/ui/overlay';
+import { formatRelative } from '@/lib/format';
+import { AnimatedNumber, Avatar, EmptyState, SegmentedTabs, SkeletonRows, StatusBadge, Toaster, useToasts } from '@/components/ui/primitives';
 import ClicksTrackingView from '@/components/views/ClicksTrackingView';
 import InboxRepliesView from '@/components/views/InboxRepliesView';
 import SystemSettingsView from '@/components/views/SystemSettingsView';
@@ -204,7 +208,6 @@ export default function OutreachEngineDashboard() {
   });
 
   const [replies, setReplies] = useState<ProspectReply[]>([]);
-  const [isRepliesModalOpen, setIsRepliesModalOpen] = useState(false);
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncingMailbox, setIsSyncingMailbox] = useState(false);
@@ -226,7 +229,7 @@ export default function OutreachEngineDashboard() {
     } catch (_) {}
 
     if (tab === 'clicks') {
-      openClicksModal(null);
+      loadClicks(null);
     } else if (tab === 'inbox') {
       apiFetch('/api/analytics/replies').then(res => res.json()).then(data => {
         if (Array.isArray(data)) setReplies(data);
@@ -238,7 +241,6 @@ export default function OutreachEngineDashboard() {
   const [activeDrawerLead, setActiveDrawerLead] = useState<Lead | null>(null);
   const [isComposeModalOpen, setIsComposeModalOpen] = useState(false);
   const [isLeadModalOpen, setIsLeadModalOpen] = useState(false);
-  const [isTemplateBuilderOpen, setIsTemplateBuilderOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   // Link Clicks Modal
@@ -271,34 +273,15 @@ export default function OutreachEngineDashboard() {
     notes: ''
   });
 
-  // Template Builder Form state
-  const [templateForm, setTemplateForm] = useState<{
-    id: number;
-    name: string;
-    category: string;
-    subject_template: string;
-    body_template: string;
-  }>({
-    id: 0,
-    name: '',
-    category: 'Cold Outreach',
-    subject_template: '',
-    body_template: ''
-  });
-  const [selectedTemplateForEdit, setSelectedTemplateForEdit] = useState<Template | null>(null);
-
   // CSV Import State
   const [csvInput, setCsvInput] = useState('');
   const [isImporting, setIsImporting] = useState(false);
-  const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const { toasts, push: showToast, dismiss: dismissToast } = useToasts();
+  const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const csvFileInputRef = useRef<HTMLInputElement>(null);
-
-  const showToast = (text: string, type: 'success' | 'error' = 'success') => {
-    setToastMessage({ text, type });
-    setTimeout(() => setToastMessage(null), 4000);
-  };
 
   // Fetch all live data once on mount, sync, or mutation
   const fetchData = useCallback(async () => {
@@ -311,6 +294,7 @@ export default function OutreachEngineDashboard() {
         apiFetch('/api/analytics/replies')
       ]);
 
+      setBackendOnline(leadsRes.ok);
       if (leadsRes.ok) {
         const lData = await leadsRes.json();
         setLeads(lData);
@@ -329,6 +313,7 @@ export default function OutreachEngineDashboard() {
       if (resumeRes.ok) setResumeStatus(await resumeRes.json());
       if (repliesRes.ok) setReplies(await repliesRes.json());
     } catch (err) {
+      setBackendOnline(false);
       console.error('Error fetching data:', err);
     } finally {
       setIsLoading(false);
@@ -490,6 +475,19 @@ export default function OutreachEngineDashboard() {
     fetchData();
   }, [fetchData]);
 
+  // "/" focuses search, like most data tools
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   // Resume Upload Handler
   const handleResumeUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -524,11 +522,15 @@ export default function OutreachEngineDashboard() {
     }
   };
 
-  // Open Clicks Pop-up Modal
-  const openClicksModal = async (leadId: number | null = null) => {
+  // Load click logs (Link clicks page) or open them in a modal for one prospect
+  const openClicksModal = (leadId: number | null = null) => {
+    setIsClicksModalOpen(true);
+    loadClicks(leadId);
+  };
+
+  const loadClicks = async (leadId: number | null = null) => {
     setClicksModalLeadId(leadId);
     setIsLoadingClicks(true);
-    setIsClicksModalOpen(true);
     try {
       const url = leadId ? `/api/analytics/clicks?lead_id=${leadId}` : '/api/analytics/clicks';
       const res = await apiFetch(url);
@@ -544,11 +546,14 @@ export default function OutreachEngineDashboard() {
 
   // Drawer Handler
   const openLeadDrawer = async (leadId: number) => {
+    // Open instantly with what we already have, then fill in the thread
+    const cached = leads.find(l => l.id === leadId);
+    if (cached) setActiveDrawerLead({ ...cached, messages: undefined, clicks: undefined });
     try {
       const res = await apiFetch(`/api/leads/${leadId}`);
       if (!res.ok) throw new Error('Failed to load contact details');
       const data = await res.json();
-      setActiveDrawerLead(data);
+      setActiveDrawerLead(prev => (prev === null && cached ? prev : data));
     } catch (err: any) {
       showToast(err.message, 'error');
     }
@@ -691,81 +696,6 @@ export default function OutreachEngineDashboard() {
     }
   };
 
-  // Template Form Handlers
-  const openTemplateBuilder = (tpl: Template | null = null) => {
-    if (tpl) {
-      setSelectedTemplateForEdit(tpl);
-      setTemplateForm({
-        id: tpl.id,
-        name: tpl.name,
-        category: tpl.category,
-        subject_template: tpl.subject_template,
-        body_template: tpl.body_template
-      });
-    } else {
-      setSelectedTemplateForEdit(null);
-      setTemplateForm({
-        id: 0,
-        name: '',
-        category: 'Cold Outreach',
-        subject_template: '',
-        body_template: ''
-      });
-    }
-    setIsTemplateBuilderOpen(true);
-  };
-
-  const handleSaveTemplate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!templateForm.name.trim() || !templateForm.subject_template.trim() || !templateForm.body_template.trim()) {
-      showToast('All template fields are required', 'error');
-      return;
-    }
-
-    try {
-      let res;
-      if (templateForm.id) {
-        res = await apiFetch(`/api/templates/${templateForm.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(templateForm)
-        });
-      } else {
-        res = await apiFetch('/api/templates', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(templateForm)
-        });
-      }
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.detail || 'Failed to save template');
-      }
-
-      showToast(`Template "${templateForm.name}" saved!`);
-      setIsTemplateBuilderOpen(false);
-      fetchData();
-    } catch (err: any) {
-      showToast(err.message, 'error');
-    }
-  };
-
-  const handleDeleteTemplate = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this template?')) return;
-    try {
-      const res = await apiFetch(`/api/templates/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Failed to delete template');
-      showToast('Template deleted');
-      fetchData();
-      if (templateForm.id === id) {
-        openTemplateBuilder(null);
-      }
-    } catch (err: any) {
-      showToast(err.message, 'error');
-    }
-  };
-
   // Add / Edit Lead Handlers
   const openNewLeadModal = () => {
     setLeadForm({
@@ -884,1811 +814,784 @@ export default function OutreachEngineDashboard() {
     }
   };
 
-  // Helper Badge Colors in Ocean Palette
-  const getStatusBadge = (status: string) => {
-    switch (status.toUpperCase()) {
-      case 'DMED':
-        return 'bg-purple-50 text-purple-700 border-purple-200 font-bold';
-      case 'DM_STAGED':
-        return 'bg-sky-50 text-sky-700 border-sky-200 font-semibold';
-      case 'DM_OPEN':
-        return 'bg-emerald-50 text-emerald-700 border-emerald-200 font-semibold';
-      case 'PENDING_DM':
-        return 'bg-amber-50 text-amber-700 border-amber-200';
-      case 'DM_CLOSED':
-        return 'bg-zinc-100 text-zinc-600 border-zinc-200';
-      case 'CONTACTED':
-        return 'bg-sky-50 text-sky-700 border-sky-200';
-      case 'REPLIED':
-        return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-      case 'INTERESTED':
-        return 'bg-teal-50 text-teal-700 border-teal-200 font-bold';
-      case 'FOLLOWED_UP':
-        return 'bg-blue-50 text-blue-700 border-blue-200';
-      case 'BOUNCED':
-      case 'INVALID_EMAIL':
-      case 'INVALID_PROFILE':
-        return 'bg-rose-50 text-rose-700 border-rose-200';
-      default:
-        return 'bg-slate-100 text-slate-600 border-slate-200';
-    }
-  };
-
   const filterTabs = [
     { id: 'ALL', label: 'All', count: tabCounts.all },
-    { id: 'NOT_CONTACTED', label: 'Not Contacted', count: tabCounts.notContacted },
+    { id: 'NOT_CONTACTED', label: 'New', count: tabCounts.notContacted },
     { id: 'CONTACTED', label: 'Contacted', count: tabCounts.contacted },
     { id: 'REPLIED', label: 'Replied', count: tabCounts.replied },
-    { id: 'FOLLOWED_UP', label: 'Followed Up', count: tabCounts.followedUp },
+    { id: 'FOLLOWED_UP', label: 'Followed up', count: tabCounts.followedUp },
     { id: 'BOUNCED', label: 'Bounced', count: tabCounts.bounced }
   ];
 
   const founderFilterTabs = [
-    { id: 'ALL', label: 'All Founders', count: founderTabCounts.all },
-    { id: 'PENDING_DM', label: 'Pending Check', count: founderTabCounts.pending },
-    { id: 'DM_STAGED', label: 'DM Staged', count: founderTabCounts.staged },
-    { id: 'DMED', label: 'DMed / Sent', count: founderTabCounts.dmed },
-    { id: 'DM_CLOSED', label: 'DM Closed', count: founderTabCounts.closed },
-    { id: 'INVALID_PROFILE', label: 'Invalid Profile', count: founderTabCounts.invalid }
+    { id: 'ALL', label: 'All', count: founderTabCounts.all },
+    { id: 'PENDING_DM', label: 'Pending', count: founderTabCounts.pending },
+    { id: 'DM_STAGED', label: 'Ready', count: founderTabCounts.staged },
+    { id: 'DMED', label: 'DMed', count: founderTabCounts.dmed },
+    { id: 'DM_CLOSED', label: 'Closed', count: founderTabCounts.closed },
+    { id: 'INVALID_PROFILE', label: 'Invalid', count: founderTabCounts.invalid }
   ];
 
+  const drawerLead = useLastDefined(activeDrawerLead);
+  const replyCount = replies.filter(r => !/bounce|delivery status/i.test(r.subject || '')).length;
+  const meta = PAGE_META[activeSidebarNav];
+  const showContactActions = activeSidebarNav === 'pipeline' || activeSidebarNav === 'founder_dms';
+
+  const sidebarProps = {
+    active: activeSidebarNav,
+    onNavigate: handleNavChange,
+    counts: {
+      pipeline: regularLeads.length,
+      founders: founderLeads.length,
+      templates: templates.length,
+      clicks: analytics.total_link_clicks,
+      inbox: replyCount,
+    },
+    backendOnline,
+    resumeFilename: resumeStatus.filename,
+    resumeSizeKb: resumeStatus.size_kb,
+    onUploadResume: () => fileInputRef.current?.click(),
+    email: 'anandpraroop@gmail.com',
+  };
+
+  const searchBox = (placeholder: string) => (
+    <div className="relative w-full md:w-80">
+      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+      <input
+        ref={searchInputRef}
+        type="text"
+        placeholder={placeholder}
+        value={searchQuery}
+        onChange={e => setSearchQuery(e.target.value)}
+        className="input pl-9 pr-12"
+      />
+      {searchQuery ? (
+        <button type="button" onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 btn btn-ghost btn-icon h-6 w-6" aria-label="Clear search">
+          <X className="h-3.5 w-3.5" />
+        </button>
+      ) : (
+        <span className="kbd absolute right-2.5 top-1/2 -translate-y-1/2 hidden md:inline-flex">/</span>
+      )}
+    </div>
+  );
+
   return (
-    <div className="min-h-screen bg-slate-50/70 text-slate-900 font-sans antialiased flex flex-col lg:flex-row">
-      {/* Toast Notification Banner */}
-      {toastMessage && (
-        <div className={`fixed top-4 right-4 z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-xl shadow-lg border text-xs font-medium animate-in fade-in slide-in-from-top-2 duration-200 ${
-          toastMessage.type === 'error'
-            ? 'bg-rose-950 text-rose-100 border-rose-800'
-            : 'bg-slate-900 text-slate-100 border-slate-800 shadow-sky-500/10'
-        }`}>
-          {toastMessage.type === 'error' ? (
-            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-          ) : (
-            <CheckCircle2 className="w-4 h-4 text-sky-400 shrink-0" />
-          )}
-          <span>{toastMessage.text}</span>
-        </div>
-      )}
+    <div className="min-h-screen lg:flex">
+      <Toaster toasts={toasts} onDismiss={dismissToast} />
+      <input ref={fileInputRef} type="file" accept=".pdf" className="hidden" onChange={handleResumeUpload} />
 
-      {/* Mobile Top Bar */}
-      <div className="lg:hidden bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between sticky top-0 z-30">
-        <div className="flex items-center gap-2.5">
-          <img src="/icon.svg" alt="Logo" className="w-7 h-7 rounded-lg" />
-          <span className="font-bold text-slate-950 text-sm tracking-tight">outreach engine</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setIsRepliesModalOpen(true)}
-            className="p-1.5 text-slate-600 hover:text-slate-900 relative"
-          >
-            <Bell className="w-4 h-4" />
-            {replies.length > 0 && (
-              <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-sky-600 rounded-full" />
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
-            className="p-1.5 text-slate-600 hover:text-slate-900 border border-slate-200 rounded-lg"
-          >
-            <Menu className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-
-      {/* Mobile Slide-in Drawer */}
-      {isMobileSidebarOpen && (
-        <div className="lg:hidden fixed inset-0 z-50 flex" onClick={() => setIsMobileSidebarOpen(false)}>
-          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs" />
-          <div className="relative w-72 bg-white h-full shadow-2xl p-5 flex flex-col justify-between" onClick={e => e.stopPropagation()}>
-            <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <img src="/icon.svg" alt="Logo" className="w-7 h-7 rounded-lg" />
-                  <span className="font-bold text-slate-950 text-sm tracking-tight">outreach engine</span>
-                </div>
-                <button type="button" onClick={() => setIsMobileSidebarOpen(false)} className="p-1 text-slate-400">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <nav className="space-y-1">
-                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 mb-1">Workspace</div>
-                <button
-                  type="button"
-                  onClick={() => handleNavChange('pipeline')}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition ${
-                    activeSidebarNav === 'pipeline' ? 'bg-sky-50 text-sky-800 border border-sky-200' : 'text-slate-600'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <LayoutDashboard className="w-4 h-4 text-sky-600" />
-                    <span>Pipeline & Contacts</span>
-                  </div>
-                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600">
-                    {regularLeads.length}
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleNavChange('founder_dms')}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition ${
-                    activeSidebarNav === 'founder_dms' ? 'bg-purple-50 text-purple-800 border border-purple-200' : 'text-slate-600'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <SendHorizontal className="w-4 h-4 text-purple-600" />
-                    <span>Founder X DMs (1500+)</span>
-                  </div>
-                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-purple-100 text-purple-800 font-bold">
-                    {founderLeads.length}
-                  </span>
-                </button>
-
-                <div className="pt-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 mb-1">Tools & Pages</div>
-
-                <button
-                  type="button"
-                  onClick={() => handleNavChange('templates')}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition ${
-                    activeSidebarNav === 'templates' ? 'bg-amber-50 text-amber-900 border border-amber-200' : 'text-slate-600'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <Layers className="w-4 h-4 text-amber-600" />
-                    <span>Templates Studio</span>
-                  </div>
-                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-900">
-                    {templates.length}
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleNavChange('clicks')}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition ${
-                    activeSidebarNav === 'clicks' ? 'bg-cyan-50 text-cyan-900 border border-cyan-200' : 'text-slate-600'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <MousePointerClick className="w-4 h-4 text-cyan-600" />
-                    <span>Link Clicks / UTM</span>
-                  </div>
-                  {analytics.total_link_clicks > 0 && (
-                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-cyan-100 text-cyan-800 font-bold">
-                      {analytics.total_link_clicks}
-                    </span>
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleNavChange('inbox')}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition ${
-                    activeSidebarNav === 'inbox' ? 'bg-rose-50 text-rose-900 border border-rose-200' : 'text-slate-600'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <Inbox className="w-4 h-4 text-rose-600" />
-                    <span>Inbox Replies</span>
-                  </div>
-                  {replies.length > 0 && (
-                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-rose-500 text-white font-bold">
-                      {replies.length}
-                    </span>
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleNavChange('settings')}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition ${
-                    activeSidebarNav === 'settings' ? 'bg-emerald-50 text-emerald-900 border border-emerald-200' : 'text-slate-600'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <Activity className="w-4 h-4 text-emerald-600" />
-                    <span>System & Sync</span>
-                  </div>
-                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-800">
-                    Live
-                  </span>
-                </button>
-              </nav>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Desktop Sticky Sidebar */}
-      <aside className="hidden lg:flex flex-col w-64 bg-white border-r border-slate-200/80 h-screen sticky top-0 z-40 p-5 justify-between shrink-0 shadow-2xs">
-        {/* Top: Logo & Navigation */}
-        <div className="space-y-6">
-          <div className="flex items-center gap-3">
-            <img src="/icon.svg" alt="Logo" className="w-8 h-8 rounded-lg shadow-2xs" />
-            <div>
-              <h1 className="text-base font-bold text-slate-950 tracking-tight leading-none">outreach engine</h1>
-              <p className="text-[10px] text-slate-400 font-mono mt-0.5">ai outreach &amp; x dms</p>
-            </div>
-          </div>
-
-          {/* System Health Monitor Card */}
-          <div className="bg-slate-50/90 rounded-xl p-2.5 border border-slate-200/90 text-[11px] space-y-1.5 font-mono">
-            <div className="flex items-center justify-between">
-              <span className="text-slate-500 text-[10px]">BACKEND STATUS</span>
-              <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-600">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Hot (Render)
-              </span>
-            </div>
-            <div className="flex items-center justify-between text-[10px] text-slate-500">
-              <span>LOCAL PORT</span>
-              <span className="text-slate-800 font-semibold">:8437 Active</span>
-            </div>
-            <div className="flex items-center justify-between text-[10px] text-slate-500">
-              <span>CRON KEEPALIVE</span>
-              <span className="text-sky-600 font-semibold">Running</span>
-            </div>
-          </div>
-
-          {/* Navigation Links */}
-          <nav className="space-y-1">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 mb-2">Workspace</div>
-            
-            <button
-              type="button"
-              onClick={() => handleNavChange('pipeline')}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition ${
-                activeSidebarNav === 'pipeline'
-                  ? 'bg-sky-50 text-sky-800 border border-sky-200 shadow-2xs'
-                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <LayoutDashboard className={`w-4 h-4 ${activeSidebarNav === 'pipeline' ? 'text-sky-600' : 'text-slate-400'}`} />
-                <span>Outreach Pipeline</span>
-              </div>
-              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-white border border-slate-200 text-slate-600">
-                {regularLeads.length}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleNavChange('founder_dms')}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition ${
-                activeSidebarNav === 'founder_dms'
-                  ? 'bg-purple-50 text-purple-900 border border-purple-200 shadow-2xs'
-                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <SendHorizontal className={`w-4 h-4 ${activeSidebarNav === 'founder_dms' ? 'text-purple-600' : 'text-slate-400'}`} />
-                <span>Founder X DMs</span>
-              </div>
-              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-purple-100 text-purple-800 font-bold">
-                {founderLeads.length}
-              </span>
-            </button>
-
-            <div className="pt-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 mb-2">Tools &amp; Pages</div>
-
-            <button
-              type="button"
-              onClick={() => handleNavChange('templates')}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition ${
-                activeSidebarNav === 'templates'
-                  ? 'bg-amber-50 text-amber-900 border border-amber-200 shadow-2xs'
-                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Layers className={`w-4 h-4 ${activeSidebarNav === 'templates' ? 'text-amber-600' : 'text-slate-400'}`} />
-                <span>Templates Studio</span>
-              </div>
-              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-900">
-                {templates.length}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleNavChange('clicks')}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition ${
-                activeSidebarNav === 'clicks'
-                  ? 'bg-cyan-50 text-cyan-900 border border-cyan-200 shadow-2xs'
-                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <MousePointerClick className={`w-4 h-4 ${activeSidebarNav === 'clicks' ? 'text-cyan-600' : 'text-slate-400'}`} />
-                <span>Link Clicks / UTM</span>
-              </div>
-              {analytics.total_link_clicks > 0 && (
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-cyan-100 text-cyan-800 font-bold">
-                  {analytics.total_link_clicks}
-                </span>
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleNavChange('inbox')}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition ${
-                activeSidebarNav === 'inbox'
-                  ? 'bg-rose-50 text-rose-900 border border-rose-200 shadow-2xs'
-                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Inbox className={`w-4 h-4 ${activeSidebarNav === 'inbox' ? 'text-rose-600' : 'text-slate-400'}`} />
-                <span>Inbox Replies</span>
-              </div>
-              {replies.length > 0 && (
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-rose-500 text-white font-bold">
-                  {replies.length}
-                </span>
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleNavChange('settings')}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition ${
-                activeSidebarNav === 'settings'
-                  ? 'bg-emerald-50 text-emerald-900 border border-emerald-200 shadow-2xs'
-                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Activity className={`w-4 h-4 ${activeSidebarNav === 'settings' ? 'text-emerald-600' : 'text-slate-400'}`} />
-                <span>System &amp; Sync</span>
-              </div>
-              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-800">
-                Live
-              </span>
-            </button>
-          </nav>
-        </div>
-
-        {/* Bottom Profile & Resume Card */}
-        <div className="border-t border-slate-100 pt-4 space-y-3">
-          <div className="bg-slate-50/80 p-2.5 rounded-xl border border-slate-200/80 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Active Resume</span>
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="text-[10px] font-semibold text-sky-600 hover:underline flex items-center gap-0.5"
-              >
-                <Upload className="w-2.5 h-2.5" />
-                <span>Upload</span>
-              </button>
-            </div>
-            <div className="flex items-center gap-2">
-              <Paperclip className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-              <div className="min-w-0">
-                <p className="text-[11px] font-mono font-medium text-slate-800 truncate">{resumeStatus.filename}</p>
-                <p className="text-[9px] text-slate-400 font-mono">{resumeStatus.size_kb} KB</p>
-              </div>
-            </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".pdf"
-              className="hidden"
-              onChange={handleResumeUpload}
-            />
-          </div>
-
-          <div className="px-1 text-[11px] text-slate-500 font-mono truncate">
-            anandpraroop@gmail.com
-          </div>
-        </div>
+      {/* Desktop sidebar */}
+      <aside className="hidden lg:block sticky top-0 h-screen w-[248px] shrink-0 border-r border-slate-200/70 bg-[#f3f4f7] px-3 py-5">
+        <SidebarContent {...sidebarProps} />
       </aside>
 
-      {/* Main Content Area */}
-      <main className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 space-y-6">
-        
-        {/* Top Header */}
-        <header className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h2 className="text-lg font-bold text-slate-950 tracking-tight">
-              {activeSidebarNav === 'founder_dms' && 'Founder X DMs Directory'}
-              {activeSidebarNav === 'pipeline' && 'Outreach Pipeline'}
-              {activeSidebarNav === 'templates' && 'Templates Studio'}
-              {activeSidebarNav === 'clicks' && 'Link Clicks & UTM Attribution'}
-              {activeSidebarNav === 'inbox' && 'Inbound Mailbox & Replies'}
-              {activeSidebarNav === 'settings' && 'System Infrastructure & Mailbox Sync'}
-            </h2>
-            <p className="text-xs text-slate-400 mt-0.5">
-              {activeSidebarNav === 'founder_dms' && '1,500+ funded startups with verified X handles and human pitch generators'}
-              {activeSidebarNav === 'pipeline' && 'Cold outreach email pipeline, replies, bounces, and link click attribution'}
-              {activeSidebarNav === 'templates' && 'Manage high-converting cold email and X DM pitch templates with zero em dashes'}
-              {activeSidebarNav === 'clicks' && 'Real-time telemetry and attribution for portfolio and Loom demos'}
-              {activeSidebarNav === 'inbox' && 'Detected replies and bounces automatically synced via IMAP SSL'}
-              {activeSidebarNav === 'settings' && 'Live monitoring of Neon DB, Gmail IMAP/SMTP services, and background keep-alive'}
-            </p>
-          </div>
+      {/* Mobile sidebar */}
+      <Drawer open={isMobileSidebarOpen} onClose={() => setIsMobileSidebarOpen(false)} side="left" widthClassName="max-w-[280px]">
+        <div className="h-full bg-[#f3f4f7] px-3 py-5">
+          <SidebarContent {...sidebarProps} />
+        </div>
+      </Drawer>
 
-          {/* Action Toolbar */}
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={handleManualSyncMailbox}
-              disabled={isSyncingMailbox}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-sky-50/50 hover:border-sky-300 transition disabled:opacity-60 shadow-2xs"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 text-sky-600 ${isSyncingMailbox ? 'animate-spin' : ''}`} />
-              <span>{isSyncingMailbox ? 'Checking...' : 'Sync Inbox'}</span>
+      <div className="flex-1 min-w-0">
+        {/* Top bar */}
+        <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-[#f7f8fa]/80 backdrop-blur-xl">
+          <div className="mx-auto flex max-w-[1400px] items-center gap-3 px-4 sm:px-6 lg:px-8 h-16">
+            <button type="button" onClick={() => setIsMobileSidebarOpen(true)} className="btn btn-secondary btn-icon lg:hidden" aria-label="Open menu">
+              <Menu className="h-4 w-4" />
             </button>
-
-            <button
-              type="button"
-              onClick={() => setIsImportModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-sky-50/50 hover:border-sky-300 transition shadow-2xs"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-sky-600" />
-              <span>Import Sheet</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={openNewLeadModal}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 rounded-xl shadow-xs shadow-sky-500/25 active:scale-95 transition"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Add Contact</span>
-            </button>
+            <div className="min-w-0 flex-1">
+              <h1 key={activeSidebarNav} className="animate-fade-in truncate text-[17px] font-semibold tracking-tight text-slate-900">{meta.title}</h1>
+              <p className="hidden sm:block truncate text-[13px] text-slate-500">{meta.subtitle}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={handleManualSyncMailbox} disabled={isSyncingMailbox} className="btn btn-secondary" title="Check Gmail for replies and bounces">
+                <RefreshCw className={`h-3.5 w-3.5 ${isSyncingMailbox ? 'animate-spin text-brand-600' : 'text-slate-500'}`} />
+                <span className="hidden sm:inline">{isSyncingMailbox ? 'Syncing' : 'Sync inbox'}</span>
+              </button>
+              {showContactActions && (
+                <>
+                  <button type="button" onClick={() => setIsImportModalOpen(true)} className="btn btn-secondary hidden md:inline-flex">
+                    <FileSpreadsheet className="h-3.5 w-3.5 text-slate-500" />
+                    Import
+                  </button>
+                  <button type="button" onClick={openNewLeadModal} className="btn btn-primary">
+                    <Plus className="h-4 w-4" />
+                    <span className="hidden sm:inline">Add contact</span>
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </header>
 
-        {/* Dedicated View Routing */}
-        {activeSidebarNav === 'templates' && (
-          <TemplatesStudioView
-            templates={templates}
-            fetchData={fetchData}
-            showToast={showToast}
-            apiFetch={apiFetch}
-          />
-        )}
+        <main key={activeSidebarNav} className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 py-6 lg:py-8 animate-fade-up">
+          {activeSidebarNav === 'templates' && (
+            <TemplatesStudioView templates={templates} fetchData={fetchData} showToast={showToast} apiFetch={apiFetch} />
+          )}
 
-        {activeSidebarNav === 'clicks' && (
-          <ClicksTrackingView
-            clicks={clicksData}
-            isLoading={isLoadingClicks}
-            onRefresh={() => openClicksModal(null)}
-            openLeadDrawer={openLeadDrawer}
-            showToast={showToast}
-          />
-        )}
+          {activeSidebarNav === 'clicks' && (
+            <ClicksTrackingView
+              clicks={clicksData}
+              isLoading={isLoadingClicks}
+              onRefresh={() => loadClicks(null)}
+              openLeadDrawer={openLeadDrawer}
+              showToast={showToast}
+            />
+          )}
 
-        {activeSidebarNav === 'inbox' && (
-          <InboxRepliesView
-            replies={replies}
-            isSyncing={isSyncingMailbox}
-            onSyncMailbox={handleManualSyncMailbox}
-            openLeadDrawer={openLeadDrawer}
-            openComposeByLeadId={openComposeByLeadId}
-            onUpdateLeadStatus={handleUpdateLeadStatus}
-            showToast={showToast}
-          />
-        )}
+          {activeSidebarNav === 'inbox' && (
+            <InboxRepliesView
+              replies={replies}
+              isSyncing={isSyncingMailbox}
+              onSyncMailbox={handleManualSyncMailbox}
+              openLeadDrawer={openLeadDrawer}
+              openComposeByLeadId={openComposeByLeadId}
+              onUpdateLeadStatus={handleUpdateLeadStatus}
+              showToast={showToast}
+            />
+          )}
 
-        {activeSidebarNav === 'settings' && (
-          <SystemSettingsView
-            resumeStatus={resumeStatus}
-            onUploadResume={handleResumeUpload}
-            fileInputRef={fileInputRef}
-            isSyncingMailbox={isSyncingMailbox}
-            onSyncMailbox={handleManualSyncMailbox}
-            showToast={showToast}
-            fetchData={fetchData}
-            apiFetch={apiFetch}
-          />
-        )}
+          {activeSidebarNav === 'settings' && (
+            <SystemSettingsView
+              resumeStatus={resumeStatus}
+              onUploadResume={handleResumeUpload}
+              fileInputRef={fileInputRef}
+              isSyncingMailbox={isSyncingMailbox}
+              onSyncMailbox={handleManualSyncMailbox}
+              showToast={showToast}
+              fetchData={fetchData}
+              apiFetch={apiFetch}
+            />
+          )}
 
-        {activeSidebarNav === 'founder_dms' && (
-          <div className="space-y-6">
-            {/* Founder KPI Cards */}
-            <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <div 
-                onClick={() => setFounderStatusFilter('ALL')}
-                className={`bg-white p-4 sm:p-5 rounded-2xl border transition cursor-pointer group shadow-xs ${
-                  founderStatusFilter === 'ALL' ? 'border-purple-400 ring-2 ring-purple-500/10' : 'border-slate-200/80 hover:border-purple-300'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total Founders</span>
-                  <div className="p-1.5 rounded-lg bg-purple-50 text-purple-600">
-                    <Users className="w-4 h-4" />
-                  </div>
-                </div>
-                <div className="text-2xl sm:text-3xl font-bold text-slate-950 mt-2">
-                  {founderTabCounts.all}
-                </div>
-                <div className="text-xs text-slate-400 mt-1 flex items-center justify-between">
-                  <span>1,500+ Startup Sheet</span>
-                  <span className="text-purple-600 font-medium text-[11px] group-hover:underline">View All &rarr;</span>
-                </div>
+          {activeSidebarNav === 'founder_dms' && (
+            <div className="space-y-6">
+              <section className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+                <StatCard label="Founders" value={founderTabCounts.all} sub="from the founder sheet" icon={<Users className="h-4 w-4" />} active={founderStatusFilter === 'ALL'} onClick={() => setFounderStatusFilter('ALL')} />
+                <StatCard label="DM ready" value={founderTabCounts.staged} sub="open DMs, verified" icon={<Sparkles className="h-4 w-4" />} active={founderStatusFilter === 'DM_STAGED'} onClick={() => setFounderStatusFilter('DM_STAGED')} />
+                <StatCard label="DMed" value={founderTabCounts.dmed} sub="sent on X" icon={<Send className="h-4 w-4" />} active={founderStatusFilter === 'DMED'} onClick={() => setFounderStatusFilter('DMED')} />
+                <StatCard label="DM closed" value={founderTabCounts.closed} sub="skipped, DMs off" icon={<X className="h-4 w-4" />} active={founderStatusFilter === 'DM_CLOSED'} onClick={() => setFounderStatusFilter('DM_CLOSED')} />
+              </section>
+
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                <SegmentedTabs tabs={founderFilterTabs} value={founderStatusFilter} onChange={setFounderStatusFilter} />
+                {searchBox('Search founder, company, @handle')}
               </div>
 
-              <div 
-                onClick={() => setFounderStatusFilter('DM_STAGED')}
-                className={`bg-white p-4 sm:p-5 rounded-2xl border transition cursor-pointer group shadow-xs ${
-                  founderStatusFilter === 'DM_STAGED' ? 'border-sky-400 ring-2 ring-sky-500/10' : 'border-slate-200/80 hover:border-sky-300'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">DM Open / Ready</span>
-                  <div className="p-1.5 rounded-lg bg-sky-50 text-sky-600">
-                    <Sparkles className="w-4 h-4" />
-                  </div>
-                </div>
-                <div className="text-2xl sm:text-3xl font-bold text-slate-950 mt-2">
-                  {founderTabCounts.staged}
-                </div>
-                <div className="text-xs text-slate-400 mt-1 flex items-center justify-between">
-                  <span>verified open DMs</span>
-                  <span className="text-sky-600 font-medium text-[11px] group-hover:underline">Filter &rarr;</span>
-                </div>
-              </div>
-
-              <div 
-                onClick={() => setFounderStatusFilter('DMED')}
-                className={`bg-white p-4 sm:p-5 rounded-2xl border transition cursor-pointer group shadow-xs ${
-                  founderStatusFilter === 'DMED' ? 'border-emerald-400 ring-2 ring-emerald-500/10' : 'border-slate-200/80 hover:border-emerald-300'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">DMed / Sent</span>
-                  <div className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600">
-                    <Send className="w-4 h-4" />
-                  </div>
-                </div>
-                <div className="text-2xl sm:text-3xl font-bold text-slate-950 mt-2">
-                  {founderTabCounts.dmed}
-                </div>
-                <div className="text-xs text-slate-400 mt-1 flex items-center justify-between">
-                  <span>dispatched on X</span>
-                  <span className="text-emerald-600 font-medium text-[11px] group-hover:underline">Filter &rarr;</span>
-                </div>
-              </div>
-
-              <div 
-                onClick={() => setFounderStatusFilter('DM_CLOSED')}
-                className={`bg-white p-4 sm:p-5 rounded-2xl border transition cursor-pointer group shadow-xs ${
-                  founderStatusFilter === 'DM_CLOSED' ? 'border-zinc-400 ring-2 ring-zinc-500/10' : 'border-slate-200/80 hover:border-zinc-300'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">DM Closed</span>
-                  <div className="p-1.5 rounded-lg bg-zinc-100 text-zinc-600">
-                    <X className="w-4 h-4" />
-                  </div>
-                </div>
-                <div className="text-2xl sm:text-3xl font-bold text-slate-950 mt-2">
-                  {founderTabCounts.closed}
-                </div>
-                <div className="text-xs text-slate-400 mt-1 flex items-center justify-between">
-                  <span>sites skipped (step 2)</span>
-                  <span className="text-zinc-600 font-medium text-[11px] group-hover:underline">Filter &rarr;</span>
-                </div>
-              </div>
-            </section>
-
-            {/* Filter Tabs & Search Bar */}
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-              <div className="inline-flex flex-wrap bg-white p-1 rounded-xl border border-slate-200 shadow-2xs gap-1">
-                {founderFilterTabs.map(tab => (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => setFounderStatusFilter(tab.id)}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-                      founderStatusFilter === tab.id
-                        ? 'bg-purple-50 text-purple-900 border border-purple-200 shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                    }`}
-                  >
-                    <span>{tab.label}</span>
-                    <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
-                      founderStatusFilter === tab.id ? 'bg-purple-200/80 text-purple-900' : 'bg-slate-100 text-slate-600'
-                    }`}>
-                      {tab.count}
-                    </span>
-                  </button>
-                ))}
-              </div>
-
-              {/* Search input */}
-              <div className="relative w-full md:w-72">
-                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  placeholder="Search founder, company, @handle..."
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:outline-hidden focus:border-purple-400 focus:ring-2 focus:ring-purple-500/10 text-slate-900 shadow-2xs"
-                />
-              </div>
-            </div>
-
-            {/* Founder Table */}
-            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-200 bg-slate-50/60 font-semibold text-slate-500">
-                      <th className="py-3 px-4">Startup & Category</th>
-                      <th className="py-3 px-4">Founder</th>
-                      <th className="py-3 px-4">X (Twitter)</th>
-                      <th className="py-3 px-4">DM Status</th>
-                      <th className="py-3 px-4 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {filteredFounderLeads.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="py-12 text-center text-slate-400">
-                          No founder leads found matching current filter.
-                        </td>
+              <div className="card overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-[13px]">
+                    <thead>
+                      <tr className="border-b border-slate-100 bg-slate-50/50">
+                        <Th>Startup</Th>
+                        <Th className="hidden md:table-cell">Founder</Th>
+                        <Th className="hidden lg:table-cell">X profile</Th>
+                        <Th>Status</Th>
+                        <Th className="text-right">Actions</Th>
                       </tr>
-                    ) : (
-                      filteredFounderLeads.map(lead => {
-                        const handle = (lead.x_handle || '').replace(/^@/, '');
-                        return (
-                          <tr key={lead.id} className="hover:bg-slate-50/70 transition">
-                            <td className="py-3 px-4">
-                              <div className="font-semibold text-slate-900 text-xs">{lead.company}</div>
-                              {lead.custom_hook && (
-                                <div className="text-[11px] text-slate-400 line-clamp-1 max-w-xs">{lead.custom_hook}</div>
-                              )}
-                            </td>
-                            <td className="py-3 px-4">
-                              <div className="font-medium text-slate-800">{lead.first_name} {lead.last_name || ''}</div>
-                              <div className="text-[10px] text-slate-400">{lead.role || 'Founder'}</div>
-                            </td>
-                            <td className="py-3 px-4">
-                              {handle ? (
-                                <a
-                                  href={`https://x.com/${handle}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1 font-mono text-purple-700 hover:text-purple-900 hover:underline bg-purple-50/60 px-2 py-0.5 rounded-md border border-purple-200/60"
-                                >
-                                  <span>@{handle}</span>
-                                  <ExternalLink className="w-2.5 h-2.5" />
-                                </a>
-                              ) : (
-                                <span className="text-slate-400">N/A</span>
-                              )}
-                            </td>
-                            <td className="py-3 px-4">
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border ${getStatusBadge(lead.status)}`}>
-                                {lead.status}
-                              </span>
-                            </td>
-                            <td className="py-3 px-4 text-right">
-                              <div className="flex items-center justify-end gap-1.5">
-                                {handle && (
-                                  <a
-                                    href={`https://x.com/${handle}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="px-2.5 py-1 text-[11px] font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition"
-                                  >
-                                    Open X
+                    </thead>
+                    <tbody key={`${founderStatusFilter}-${searchQuery}`} className="stagger">
+                      {isLoading && founderLeads.length === 0 ? (
+                        <SkeletonRows cols={5} />
+                      ) : filteredFounderLeads.length === 0 ? (
+                        <tr>
+                          <td colSpan={5}>
+                            <EmptyState icon={<SendHorizontal className="h-5 w-5" />} title="No founders here" description="Try a different filter or clear the search." />
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredFounderLeads.map((lead, i) => {
+                          const handle = (lead.x_handle || '').replace(/^@/, '');
+                          const name = `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || 'Founder';
+                          return (
+                            <tr key={lead.id} style={{ '--i': i } as React.CSSProperties} className="group border-b border-slate-100 last:border-0 hover:bg-slate-50/70">
+                              <td className="px-3 sm:px-4 py-3.5">
+                                <div className="max-w-[140px] sm:max-w-xs truncate font-medium text-slate-900">{lead.company}</div>
+                                <div className="mt-0.5 max-w-[140px] sm:max-w-xs truncate text-xs text-slate-400">
+                                  <span className="md:hidden">{name}{handle ? ` · @${handle}` : ''}</span>
+                                  <span className="hidden md:inline">{lead.custom_hook}</span>
+                                </div>
+                              </td>
+                              <td className="hidden md:table-cell px-4 py-3.5">
+                                <div className="flex items-center gap-2.5">
+                                  <Avatar name={name} size="sm" />
+                                  <div className="min-w-0">
+                                    <div className="truncate font-medium text-slate-800">{name}</div>
+                                    <div className="truncate text-xs text-slate-400">{lead.role || 'Founder'}</div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="hidden lg:table-cell px-4 py-3.5">
+                                {handle ? (
+                                  <a href={`https://x.com/${handle}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-mono text-xs text-slate-600 hover:text-brand-600">
+                                    @{handle}
+                                    <ExternalLink className="h-3 w-3 opacity-0 group-hover:opacity-100" />
                                   </a>
+                                ) : (
+                                  <span className="text-slate-300">None</span>
                                 )}
-                                <button
-                                  type="button"
-                                  onClick={() => copyFounderPitch(lead)}
-                                  className="px-2.5 py-1 text-[11px] font-semibold text-purple-700 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 transition"
-                                  title="Copy bespoke human pitch with Loom & portfolio"
-                                >
-                                  Copy Pitch
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleMarkDMed(lead.id)}
-                                  className="px-2.5 py-1 text-[11px] font-semibold text-white bg-purple-600 hover:bg-purple-700 rounded-lg shadow-2xs transition"
-                                >
-                                  Mark DMed
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
+                              </td>
+                              <td className="px-3 sm:px-4 py-3.5"><StatusBadge status={lead.status} /></td>
+                              <td className="px-3 sm:px-4 py-3.5">
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <button type="button" onClick={() => copyFounderPitch(lead)} className="btn btn-secondary btn-sm" title="Copy a short DM with your Loom">
+                                    <Copy className="h-3 w-3" />
+                                    <span className="hidden sm:inline">Copy DM</span>
+                                  </button>
+                                  <button type="button" onClick={() => handleMarkDMed(lead.id)} className="btn btn-primary btn-sm" disabled={lead.status === 'DMED'}>
+                                    <Check className="h-3 w-3" />
+                                    <span className="hidden sm:inline">{lead.status === 'DMED' ? 'DMed' : 'Mark DMed'}</span>
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {activeSidebarNav === 'pipeline' && (
-          <div className="space-y-6">
+          {activeSidebarNav === 'pipeline' && (
+            <div className="space-y-6">
+              <section className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+                <StatCard label="Prospects" value={regularLeads.length} sub="in your pipeline" icon={<Users className="h-4 w-4" />} active={statusFilter === 'ALL'} onClick={() => setStatusFilter('ALL')} />
+                <StatCard label="Contacted" value={tabCounts.contacted} sub={`${analytics.total_sent_emails} emails sent`} icon={<Send className="h-4 w-4" />} active={statusFilter === 'CONTACTED'} onClick={() => setStatusFilter('CONTACTED')} />
+                <StatCard label="Replied" value={tabCounts.replied} sub={tabCounts.contacted ? `${((tabCounts.replied / tabCounts.contacted) * 100).toFixed(1)}% reply rate` : 'no sends yet'} icon={<Inbox className="h-4 w-4" />} active={statusFilter === 'REPLIED'} onClick={() => setStatusFilter('REPLIED')} />
+                <StatCard label="Follow-up due" value={analytics.follow_up_needed} sub="3+ days since last email" icon={<Clock className="h-4 w-4" />} active={statusFilter === 'FOLLOWED_UP'} onClick={() => setStatusFilter('FOLLOWED_UP')} tone="amber" />
+              </section>
 
-        {/* Interactive KPI Metrics Grid */}
-        <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Card 1: Total Prospects */}
-          <div 
-            onClick={() => setStatusFilter('ALL')}
-            className={`bg-white p-4 sm:p-5 rounded-2xl border transition cursor-pointer group shadow-xs ${
-              statusFilter === 'ALL' ? 'border-sky-400 ring-2 ring-sky-500/10' : 'border-slate-200/80 hover:border-sky-300'
-            }`}
-            title="Click to view all prospects"
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total Prospects</span>
-              <div className="p-1.5 rounded-lg bg-sky-50 text-sky-600 group-hover:scale-105 transition">
-                <Users className="w-4 h-4" />
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                <SegmentedTabs tabs={filterTabs} value={statusFilter} onChange={setStatusFilter} />
+                {searchBox('Search name, company, email')}
+              </div>
+
+              <div className="card overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-[13px]">
+                    <thead>
+                      <tr className="border-b border-slate-100 bg-slate-50/50">
+                        <Th>Contact</Th>
+                        <Th className="hidden sm:table-cell">Company</Th>
+                        <Th className="hidden md:table-cell">Email</Th>
+                        <Th>Status</Th>
+                        <Th className="hidden lg:table-cell">Last contacted</Th>
+                        <Th className="text-right">Actions</Th>
+                      </tr>
+                    </thead>
+                    <tbody key={`${statusFilter}-${searchQuery}`} className="stagger">
+                      {isLoading && regularLeads.length === 0 ? (
+                        <SkeletonRows cols={6} />
+                      ) : filteredLeads.length === 0 ? (
+                        <tr>
+                          <td colSpan={6}>
+                            <EmptyState
+                              icon={<Inbox className="h-5 w-5" />}
+                              title="No contacts found"
+                              description="Try a different filter, clear the search, or add someone new."
+                              action={<button type="button" onClick={openNewLeadModal} className="btn btn-secondary btn-sm"><Plus className="h-3.5 w-3.5" />Add contact</button>}
+                            />
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredLeads.map((lead, i) => {
+                          const fullName = `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || lead.email.split('@')[0];
+                          return (
+                            <tr
+                              key={lead.id}
+                              style={{ '--i': i } as React.CSSProperties}
+                              onClick={() => openLeadDrawer(lead.id)}
+                              className="group cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50/70"
+                            >
+                              <td className="px-3 sm:px-4 py-3">
+                                <div className="flex items-center gap-3">
+                                  <Avatar name={fullName} />
+                                  <div className="min-w-0">
+                                    <div className="max-w-[120px] sm:max-w-[220px] truncate font-medium text-slate-900 group-hover:text-brand-700">{fullName}</div>
+                                    <div className="max-w-[120px] sm:max-w-[220px] truncate text-xs text-slate-400">
+                                      {lead.role || 'No role'}
+                                      {lead.company && <span className="sm:hidden"> · {lead.company}</span>}
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="hidden sm:table-cell px-4 py-3 font-medium text-slate-700">{lead.company || <span className="text-slate-300">None</span>}</td>
+                              <td className="hidden md:table-cell px-4 py-3 font-mono text-xs text-slate-500">{lead.email}</td>
+                              <td className="px-3 sm:px-4 py-3"><StatusBadge status={lead.status} /></td>
+                              <td className="hidden lg:table-cell px-4 py-3 text-xs text-slate-500 tabular-nums">{formatRelative(lead.last_contacted_at)}</td>
+                              <td className="px-3 sm:px-4 py-3" onClick={e => e.stopPropagation()}>
+                                <div className="flex items-center justify-end gap-1">
+                                  <div className="hidden lg:flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button type="button" onClick={() => openEditLeadModal(lead)} className="btn btn-ghost btn-icon" title="Edit contact">
+                                      <Edit className="h-3.5 w-3.5" />
+                                    </button>
+                                    <button type="button" onClick={() => handleDeleteLead(lead.id)} className="btn btn-danger btn-icon" title="Delete contact">
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </button>
+                                  </div>
+                                  <button type="button" onClick={() => openCompose(lead)} className="btn btn-secondary btn-sm" aria-label="Write email">
+                                    <Mail className="h-3 w-3" />
+                                    <span className="hidden sm:inline">Email</span>
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                {!isLoading && filteredLeads.length > 0 && (
+                  <div className="flex items-center justify-between border-t border-slate-100 px-4 py-2.5 text-xs text-slate-400">
+                    <span>{filteredLeads.length} of {regularLeads.length} contacts</span>
+                    <span className="hidden sm:inline">Click a row to see the full thread</span>
+                  </div>
+                )}
               </div>
             </div>
-            <div className="text-2xl sm:text-3xl font-bold text-slate-950 mt-2">
-              {analytics.total_leads}
-            </div>
-            <div className="text-xs text-slate-400 mt-1 flex items-center justify-between">
-              <span>in pipeline</span>
-              <span className="text-sky-600 font-medium text-[11px] group-hover:underline">Filter &rarr;</span>
-            </div>
-          </div>
+          )}
+        </main>
+      </div>
 
-          {/* Card 2: Contacted */}
-          <div 
-            onClick={() => setStatusFilter('CONTACTED')}
-            className={`bg-white p-4 sm:p-5 rounded-2xl border transition cursor-pointer group shadow-xs ${
-              statusFilter === 'CONTACTED' ? 'border-sky-400 ring-2 ring-sky-500/10' : 'border-slate-200/80 hover:border-sky-300'
-            }`}
-            title="Click to filter contacted prospects"
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Contacted</span>
-              <div className="p-1.5 rounded-lg bg-blue-50 text-blue-600 group-hover:scale-105 transition">
-                <Send className="w-4 h-4" />
+      {/* Contact drawer */}
+      <Drawer open={!!activeDrawerLead} onClose={() => setActiveDrawerLead(null)}>
+        {drawerLead && (
+          <>
+            <div className="flex items-start gap-3 border-b border-slate-100 px-6 pt-6 pb-5">
+              <Avatar name={`${drawerLead.first_name || ''} ${drawerLead.last_name || ''}`.trim() || drawerLead.email} size="lg" />
+              <div className="min-w-0 flex-1">
+                <h2 className="truncate text-[17px] font-semibold tracking-tight text-slate-900">
+                  {`${drawerLead.first_name || ''} ${drawerLead.last_name || ''}`.trim() || 'Contact'}
+                </h2>
+                <p className="truncate text-[13px] text-slate-500">
+                  {[drawerLead.role, drawerLead.company].filter(Boolean).join(' at ') || 'No role or company'}
+                </p>
+                <div className="mt-2.5"><StatusBadge status={drawerLead.status} /></div>
               </div>
-            </div>
-            <div className="text-2xl sm:text-3xl font-bold text-slate-950 mt-2">
-              {analytics.contacted_count}
-            </div>
-            <div className="text-xs text-slate-400 mt-1 flex items-center justify-between">
-              <span>{analytics.total_sent_emails} sent messages</span>
-              <span className="text-sky-600 font-medium text-[11px] group-hover:underline">Filter &rarr;</span>
-            </div>
-          </div>
-
-          {/* Card 3: Link Clicks Activity */}
-          <div 
-            onClick={() => openClicksModal(null)}
-            className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/80 hover:border-sky-300 transition cursor-pointer group shadow-xs"
-            title="Click to inspect real-time link click logs"
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Link Clicks</span>
-              <div className="p-1.5 rounded-lg bg-cyan-50 text-cyan-600 group-hover:scale-105 transition">
-                <MousePointerClick className="w-4 h-4" />
-              </div>
-            </div>
-            <div className="text-2xl sm:text-3xl font-bold text-slate-950 mt-2 flex items-baseline gap-2">
-              <span>{analytics.total_link_clicks}</span>
-              <span className="text-xs text-sky-600 font-semibold group-hover:underline">View Log &rarr;</span>
-            </div>
-            <div className="text-xs text-slate-400 mt-1">
-              tracked portfolio & demo links
-            </div>
-          </div>
-
-          {/* Card 4: Follow-up Due */}
-          <div 
-            onClick={() => setStatusFilter('FOLLOWED_UP')}
-            className={`bg-white p-4 sm:p-5 rounded-2xl border transition cursor-pointer group shadow-xs ${
-              statusFilter === 'FOLLOWED_UP' ? 'border-sky-400 ring-2 ring-sky-500/10' : 'border-slate-200/80 hover:border-sky-300'
-            }`}
-            title="Click to filter follow-ups"
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Follow-up Due</span>
-              <div className="p-1.5 rounded-lg bg-amber-50 text-amber-600 group-hover:scale-105 transition">
-                <Clock className="w-4 h-4" />
-              </div>
-            </div>
-            <div className="text-2xl sm:text-3xl font-bold text-slate-950 mt-2">
-              {analytics.follow_up_needed}
-            </div>
-            <div className="text-xs text-slate-400 mt-1 flex items-center justify-between">
-              <span>&gt; 3 days since contact</span>
-              <span className="text-sky-600 font-medium text-[11px] group-hover:underline">Filter &rarr;</span>
-            </div>
-          </div>
-        </section>
-
-        {/* Filter Tabs & Search Bar */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-          {/* Status Tabs */}
-          <div className="inline-flex flex-wrap bg-white p-1 rounded-xl border border-slate-200 shadow-2xs gap-1">
-            {filterTabs.map(tab => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setStatusFilter(tab.id)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
-                  statusFilter === tab.id
-                    ? 'bg-gradient-to-r from-sky-500 to-blue-600 text-white shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                }`}
-              >
-                <span>{tab.label}</span>
-                <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-                  statusFilter === tab.id ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
-                }`}>
-                  {tab.count}
-                </span>
+              <button type="button" onClick={() => setActiveDrawerLead(null)} className="btn btn-ghost btn-icon" aria-label="Close">
+                <X className="h-4 w-4" />
               </button>
+            </div>
+
+            <div className="flex gap-2 border-b border-slate-100 px-6 py-3">
+              <button type="button" onClick={() => openCompose(drawerLead)} className="btn btn-primary flex-1">
+                <Mail className="h-3.5 w-3.5" />
+                Write email
+              </button>
+              <button type="button" onClick={() => openEditLeadModal(drawerLead)} className="btn btn-secondary">
+                <Edit className="h-3.5 w-3.5" />
+                Edit
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+              <dl className="space-y-3 text-[13px]">
+                <InfoRow label="Email">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(drawerLead.email);
+                      showToast('Email copied');
+                    }}
+                    className="group inline-flex items-center gap-1.5 font-mono text-xs text-slate-700 hover:text-brand-600"
+                  >
+                    {drawerLead.email}
+                    <Copy className="h-3 w-3 text-slate-300 group-hover:text-brand-600" />
+                  </button>
+                </InfoRow>
+                {drawerLead.website_url && (
+                  <InfoRow label="Website">
+                    <a href={drawerLead.website_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-slate-700 hover:text-brand-600">
+                      {drawerLead.website_url.replace(/^https?:\/\//, '')}
+                      <ArrowUpRight className="h-3 w-3" />
+                    </a>
+                  </InfoRow>
+                )}
+                <InfoRow label="Source"><span className="text-slate-700">{drawerLead.source}</span></InfoRow>
+                <InfoRow label="Last contacted"><span className="text-slate-700">{formatRelative(drawerLead.last_contacted_at)}</span></InfoRow>
+              </dl>
+
+              {(drawerLead.custom_hook || drawerLead.notes) && (
+                <div className="space-y-3">
+                  {drawerLead.custom_hook && (
+                    <div className="rounded-xl bg-brand-50/60 p-3.5 ring-1 ring-brand-100">
+                      <div className="eyebrow mb-1 text-brand-600/70">Personal hook</div>
+                      <p className="text-[13px] leading-relaxed text-slate-800">{drawerLead.custom_hook}</p>
+                    </div>
+                  )}
+                  {drawerLead.notes && (
+                    <div className="rounded-xl bg-slate-50 p-3.5 ring-1 ring-slate-200/70">
+                      <div className="eyebrow mb-1">Notes</div>
+                      <p className="text-[13px] leading-relaxed text-slate-700">{drawerLead.notes}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {drawerLead.clicks && drawerLead.clicks.length > 0 && (
+                <div>
+                  <div className="eyebrow mb-2">Link clicks · {drawerLead.clicks.length}</div>
+                  <div className="space-y-1.5">
+                    {drawerLead.clicks.map(c => (
+                      <div key={c.id} className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2 text-xs ring-1 ring-slate-200/60">
+                        <span className="truncate font-medium text-slate-700">{c.target_url}</span>
+                        <span className="shrink-0 text-slate-400">{formatRelative(c.clicked_at)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <div className="eyebrow mb-3">Conversation{drawerLead.messages ? ` · ${drawerLead.messages.length}` : ''}</div>
+                {!drawerLead.messages ? (
+                  <div className="space-y-4">
+                    {[0, 1].map(i => (
+                      <div key={i} className="flex gap-3">
+                        <div className="skeleton h-6 w-6 shrink-0 rounded-full" />
+                        <div className="flex-1 space-y-2">
+                          <div className="skeleton h-3 w-2/3" />
+                          <div className="skeleton h-20 w-full rounded-xl" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : drawerLead.messages.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-slate-200 py-8 text-center text-[13px] text-slate-400">Nothing sent yet</div>
+                ) : (
+                  <ol className="relative space-y-4 before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-px before:bg-slate-200">
+                    {drawerLead.messages.map((msg, i) => {
+                      const inbound = msg.direction === 'RECEIVED';
+                      return (
+                        <li key={msg.id} className="relative pl-9 animate-fade-up" style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}>
+                          <span className={`absolute left-0 top-1 flex h-[23px] w-[23px] items-center justify-center rounded-full ring-4 ring-white ${inbound ? 'bg-emerald-100 text-emerald-600' : 'bg-brand-100 text-brand-600'}`}>
+                            {inbound ? <Inbox className="h-3 w-3" /> : <Send className="h-3 w-3" />}
+                          </span>
+                          <div className="flex items-baseline justify-between gap-2">
+                            <span className="truncate text-[13px] font-medium text-slate-900">{msg.subject}</span>
+                            <span className="shrink-0 text-[11px] text-slate-400">{formatRelative(msg.sent_at)}</span>
+                          </div>
+                          <div className="text-[11px] text-slate-400">{inbound ? 'Reply received' : msg.channel === 'X_DM' ? 'X DM sent' : 'Email sent'}</div>
+                          {(msg.body_text || msg.snippet) && (
+                            <div className={`mt-2 whitespace-pre-wrap rounded-xl p-3 text-[13px] leading-relaxed ${inbound ? 'bg-emerald-50/60 text-slate-800 ring-1 ring-emerald-100' : 'bg-slate-50 text-slate-600 ring-1 ring-slate-200/60'}`}>
+                              {msg.body_text || msg.snippet}
+                            </div>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ol>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+      </Drawer>
+
+      {/* Compose */}
+      <Modal
+        open={isComposeModalOpen && !!composeLead}
+        onClose={() => setIsComposeModalOpen(false)}
+        icon={<Mail className="h-4 w-4" />}
+        title="New email"
+        description={composeLead && <>To <span className="font-medium text-slate-700">{`${composeLead.first_name || ''} ${composeLead.last_name || ''}`.trim() || composeLead.email}</span> · {composeLead.email}</>}
+        footer={
+          <>
+            <span className="mr-auto text-xs text-slate-400 tabular-nums">
+              {wordCount(composeBody)} words
+              {wordCount(composeBody) > 140 && <span className="text-amber-600"> · try to stay under 120</span>}
+            </span>
+            <button type="button" onClick={() => setIsComposeModalOpen(false)} className="btn btn-secondary">Cancel</button>
+            <button type="button" onClick={handleSendEmail} disabled={isSending} className="btn btn-primary min-w-[96px]">
+              {isSending ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+              {isSending ? 'Sending' : 'Send'}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div>
+            <div className="flex items-center justify-between">
+              <label className="label">Template</label>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsComposeModalOpen(false);
+                  handleNavChange('templates');
+                }}
+                className="mb-1.5 text-xs font-medium text-brand-600 hover:text-brand-700"
+              >
+                Edit templates
+              </button>
+            </div>
+            <select value={composeTemplateId} onChange={handleTemplateChange} className="input">
+              <option value="">Write from scratch</option>
+              {templates.map(t => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="label">Subject</label>
+            <input type="text" value={composeSubject} onChange={e => setComposeSubject(e.target.value)} placeholder="Keep it short and specific" className="input font-medium" />
+          </div>
+
+          <div>
+            <div className="mb-1.5 flex items-center justify-between">
+              <label className="label mb-0">Message</label>
+              <SegmentedTabs
+                tabs={[{ id: 'edit', label: 'Write' }, { id: 'preview', label: 'Preview' }]}
+                value={isPreviewMode ? 'preview' : 'edit'}
+                onChange={id => setIsPreviewMode(id === 'preview')}
+              />
+            </div>
+            {isPreviewMode ? (
+              <div className="min-h-[260px] whitespace-pre-wrap rounded-xl bg-slate-50 p-4 text-[13px] leading-relaxed text-slate-800 ring-1 ring-slate-200/70 animate-fade-in">
+                <div className="mb-3 border-b border-slate-200/70 pb-3 font-semibold text-slate-900">{composeSubject || 'No subject'}</div>
+                {composeBody}
+              </div>
+            ) : (
+              <textarea rows={11} value={composeBody} onChange={e => setComposeBody(e.target.value)} placeholder="Say who you are, show one thing you built, ask one clear question." className="input" />
+            )}
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] text-slate-400">Insert</span>
+              {['{{firstName}}', '{{company}}', '{{job_role}}', '{{custom_hook}}'].map(tok => (
+                <button key={tok} type="button" onClick={() => insertVariableToken(tok)} className="chip border-slate-200 bg-white font-mono text-slate-600 hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700">
+                  {tok}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="divide-y divide-slate-100 rounded-xl ring-1 ring-slate-200/70">
+            <Switch
+              checked={attachResume}
+              onChange={setAttachResume}
+              label="Attach resume"
+              hint={`${resumeStatus.filename}. Best for posted roles, skip for founder cold emails.`}
+            />
+            <Switch
+              checked={enableUTMTracking}
+              onChange={setEnableUTMTracking}
+              label="Track link clicks"
+              hint="Routes links through a redirect, which can push emails to spam."
+            />
+          </div>
+        </div>
+      </Modal>
+
+      {/* Add / edit contact */}
+      <Modal
+        open={isLeadModalOpen}
+        onClose={() => setIsLeadModalOpen(false)}
+        size="md"
+        icon={<Users className="h-4 w-4" />}
+        title={leadForm.id ? 'Edit contact' : 'Add contact'}
+        description={leadForm.id ? leadForm.email : 'Add someone to your pipeline'}
+        footer={
+          <>
+            <button type="button" onClick={() => setIsLeadModalOpen(false)} className="btn btn-secondary">Cancel</button>
+            <button type="submit" form="lead-form" className="btn btn-primary">{leadForm.id ? 'Save changes' : 'Add contact'}</button>
+          </>
+        }
+      >
+        <form id="lead-form" onSubmit={handleSaveLead} className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="First name"><input type="text" value={leadForm.first_name} onChange={e => setLeadForm({ ...leadForm, first_name: e.target.value })} className="input" /></Field>
+            <Field label="Last name"><input type="text" value={leadForm.last_name} onChange={e => setLeadForm({ ...leadForm, last_name: e.target.value })} className="input" /></Field>
+          </div>
+          <Field label="Email"><input type="email" required value={leadForm.email} onChange={e => setLeadForm({ ...leadForm, email: e.target.value })} className="input font-mono" placeholder="name@company.com" /></Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Company"><input type="text" value={leadForm.company} onChange={e => setLeadForm({ ...leadForm, company: e.target.value })} className="input" /></Field>
+            <Field label="Their role"><input type="text" value={leadForm.role} onChange={e => setLeadForm({ ...leadForm, role: e.target.value })} className="input" placeholder="Founder, CTO" /></Field>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Website"><input type="url" value={leadForm.website_url} onChange={e => setLeadForm({ ...leadForm, website_url: e.target.value })} placeholder="https://" className="input" /></Field>
+            <Field label="Status">
+              <select value={leadForm.status} onChange={e => setLeadForm({ ...leadForm, status: e.target.value })} className="input">
+                <option value="NOT_CONTACTED">Not contacted</option>
+                <option value="CONTACTED">Contacted</option>
+                <option value="FOLLOWED_UP">Followed up</option>
+                <option value="REPLIED">Replied</option>
+                <option value="INTERESTED">Interested</option>
+                <option value="BOUNCED">Bounced</option>
+              </select>
+            </Field>
+          </div>
+          <Field label="Personal hook" hint="A real detail about their product. Fills {{custom_hook}}.">
+            <input type="text" value={leadForm.custom_hook} onChange={e => setLeadForm({ ...leadForm, custom_hook: e.target.value })} placeholder="your agent eval tooling" className="input" />
+          </Field>
+          <Field label="Role you're applying for" hint="Fills {{job_role}}.">
+            <textarea rows={2} value={leadForm.notes} onChange={e => setLeadForm({ ...leadForm, notes: e.target.value })} placeholder="Backend Engineer" className="input" />
+          </Field>
+        </form>
+      </Modal>
+
+      {/* CSV import */}
+      <Modal
+        open={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        icon={<FileSpreadsheet className="h-4 w-4" />}
+        title="Import contacts"
+        description="Upload a CSV or paste rows below"
+        footer={
+          <>
+            <button type="button" onClick={() => setIsImportModalOpen(false)} className="btn btn-secondary">Cancel</button>
+            <button type="button" onClick={handleImportCsv} disabled={isImporting || !csvInput.trim()} className="btn btn-primary">
+              {isImporting && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
+              {isImporting ? 'Importing' : 'Import'}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <button
+            type="button"
+            onClick={() => csvFileInputRef.current?.click()}
+            className="group flex w-full flex-col items-center rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/50 px-6 py-8 text-center hover:border-brand-300 hover:bg-brand-50/40"
+          >
+            <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-400 ring-1 ring-slate-200 group-hover:text-brand-600 group-hover:-translate-y-0.5 transition">
+              <Upload className="h-4 w-4" />
+            </div>
+            <span className="text-[13px] font-medium text-slate-800">{csvInput ? 'File loaded, click to replace' : 'Choose a CSV file'}</span>
+            <span className="mt-0.5 text-xs text-slate-400">Columns: First Name, Last Name, Email, Company, Role, Hook</span>
+          </button>
+          <input ref={csvFileInputRef} type="file" accept=".csv" className="hidden" onChange={handleCsvFileUpload} />
+          <Field label="Or paste CSV">
+            <textarea
+              rows={6}
+              value={csvInput}
+              onChange={e => setCsvInput(e.target.value)}
+              placeholder={'First Name,Last Name,Email,Company,Role,Custom Hook\nJohn,Doe,john@example.com,Acme,CTO,your LLM eval pipeline'}
+              className="input font-mono text-xs"
+            />
+          </Field>
+        </div>
+      </Modal>
+
+      {/* Link clicks for one prospect */}
+      <Modal
+        open={isClicksModalOpen}
+        onClose={() => setIsClicksModalOpen(false)}
+        icon={<MousePointerClick className="h-4 w-4" />}
+        title={clicksModalLeadId ? 'Link clicks for this contact' : 'Link clicks'}
+        description="Only recorded when click tracking was on for the email"
+      >
+        {isLoadingClicks ? (
+          <div className="space-y-2">{[0, 1, 2].map(i => <div key={i} className="skeleton h-14 rounded-xl" />)}</div>
+        ) : clicksData.length === 0 ? (
+          <EmptyState icon={<MousePointerClick className="h-5 w-5" />} title="No clicks yet" description="Clicks show up here when tracking is on. It is off by default to protect inbox placement." />
+        ) : (
+          <div className="stagger space-y-2">
+            {clicksData.map((c, i) => (
+              <div key={c.id} style={{ '--i': i } as React.CSSProperties} className="rounded-xl p-3 ring-1 ring-slate-200/70 text-[13px]">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="truncate font-medium text-slate-900">{c.lead_name || 'Prospect'}{c.lead_company ? ` · ${c.lead_company}` : ''}</span>
+                  <span className="shrink-0 text-xs text-slate-400">{formatRelative(c.clicked_at)}</span>
+                </div>
+                <div className="mt-0.5 truncate text-xs text-brand-600">{c.target_url}</div>
+              </div>
             ))}
           </div>
+        )}
+      </Modal>
+    </div>
+  );
+}
 
-          {/* Search Box */}
-          <div className="relative min-w-[280px]">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-            <input
-              type="text"
-              placeholder="Search name, company, email..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-8 py-2 text-xs bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 transition shadow-2xs"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-        </div>
+/* ---------------------------------------------------------------
+   Page-level helpers
+---------------------------------------------------------------- */
 
-        {/* Prospect Data Table */}
-        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="bg-slate-50/80 border-b border-slate-200/80 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                  <th className="px-5 py-3.5">Name & Role</th>
-                  <th className="px-4 py-3.5">Company</th>
-                  <th className="px-4 py-3.5">Email & Handle</th>
-                  <th className="px-4 py-3.5">Status</th>
-                  <th className="px-4 py-3.5">Link Clicks</th>
-                  <th className="px-4 py-3.5">Last Contacted</th>
-                  <th className="px-5 py-3.5 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {isLoading ? (
-                  <tr>
-                    <td colSpan={7} className="px-6 py-16 text-center text-slate-400">
-                      <RefreshCw className="w-6 h-6 animate-spin mx-auto text-sky-500 mb-2" />
-                      <span>Loading outreach contacts...</span>
-                    </td>
-                  </tr>
-                ) : filteredLeads.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-6 py-16 text-center text-slate-400">
-                      <Inbox className="w-8 h-8 mx-auto text-slate-300 mb-2" />
-                      <p className="font-semibold text-slate-700 text-sm">No contacts found</p>
-                      <p className="text-xs text-slate-400 mt-1">
-                        Try adjusting your filters or search query.
-                      </p>
-                    </td>
-                  </tr>
-                ) : (
-                  filteredLeads.map(lead => {
-                    const fullName = `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || 'No Name';
-                    const lastContactedStr = lead.last_contacted_at
-                      ? new Date(lead.last_contacted_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                      : '-';
-                    const clicksCount = lead.click_count || 0;
+const PAGE_META: Record<SidebarTab, { title: string; subtitle: string }> = {
+  pipeline: { title: 'Pipeline', subtitle: 'Everyone you are emailing, where they stand, and who needs a follow-up' },
+  founder_dms: { title: 'Founder DMs', subtitle: 'Founders from the sheet with X handles, ready for a short DM' },
+  templates: { title: 'Templates', subtitle: 'Short, Loom-first emails for remote AI, backend and automation roles' },
+  clicks: { title: 'Link clicks', subtitle: 'Who opened your Loom or portfolio, when tracking is on' },
+  inbox: { title: 'Inbox', subtitle: 'Replies and bounces synced from Gmail' },
+  settings: { title: 'System & sync', subtitle: 'Database, Gmail and keep-alive health' },
+};
 
-                    return (
-                      <tr 
-                        key={lead.id} 
-                        onClick={() => openLeadDrawer(lead.id)}
-                        className="hover:bg-sky-50/30 transition cursor-pointer group"
-                      >
-                        <td className="px-5 py-3.5">
-                          <div className="font-semibold text-slate-900 group-hover:text-sky-700 transition">
-                            {fullName}
-                          </div>
-                          <div className="text-slate-400 text-[11px] truncate max-w-[200px]">
-                            {lead.role || '-'}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3.5 font-medium text-slate-800">
-                          {lead.company || '-'}
-                        </td>
-                        <td className="px-4 py-3.5">
-                          <div className="font-mono text-[11px] text-slate-700">
-                            {lead.email}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3.5">
-                          <span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-semibold border ${getStatusBadge(lead.status)}`}>
-                            {lead.status.replace('_', ' ').toLowerCase()}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3.5" onClick={e => e.stopPropagation()}>
-                          <button
-                            type="button"
-                            onClick={() => openClicksModal(lead.id)}
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold transition ${
-                              clicksCount > 0
-                                ? 'bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100'
-                                : 'text-slate-400 hover:text-slate-600'
-                            }`}
-                            title="Inspect links clicked by this prospect"
-                          >
-                            <MousePointerClick className="w-3 h-3 text-sky-600" />
-                            <span>{clicksCount} {clicksCount === 1 ? 'click' : 'clicks'}</span>
-                          </button>
-                        </td>
-                        <td className="px-4 py-3.5 text-slate-500 font-mono text-[11px]">
-                          {lastContactedStr}
-                        </td>
-                        <td className="px-5 py-3.5 text-right" onClick={e => e.stopPropagation()}>
-                          <div className="flex items-center justify-end gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => openLeadDrawer(lead.id)}
-                              className="px-2.5 py-1 text-[11px] font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-sky-50/50 hover:border-sky-300 hover:text-sky-700 transition"
-                            >
-                              History
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => openCompose(lead)}
-                              className="px-3 py-1 text-[11px] font-semibold text-white bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 rounded-lg shadow-2xs transition"
-                            >
-                              Message
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => openEditLeadModal(lead)}
-                              className="p-1 text-slate-400 hover:text-sky-600 hover:bg-sky-50/50 rounded-lg transition"
-                              title="Edit contact details"
-                            >
-                              <Edit className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteLead(lead.id)}
-                              className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50/50 rounded-lg transition"
-                              title="Delete contact"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+function wordCount(text: string) {
+  return text.trim() ? text.trim().split(/\s+/).length : 0;
+}
+
+function Th({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return <th className={`whitespace-nowrap px-3 sm:px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.06em] text-slate-400 ${className}`}>{children}</th>;
+}
+
+function StatCard({ label, value, sub, icon, active, onClick, tone = 'brand' }: {
+  label: string;
+  value: number;
+  sub: string;
+  icon: React.ReactNode;
+  active?: boolean;
+  onClick?: () => void;
+  tone?: 'brand' | 'amber';
+}) {
+  const iconTone = tone === 'amber' ? 'bg-amber-50 text-amber-600 ring-amber-100' : 'bg-brand-50 text-brand-600 ring-brand-100';
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`card group relative overflow-hidden p-4 sm:p-5 text-left hover:-translate-y-0.5 hover:shadow-[var(--shadow-float)] duration-300 ${
+        active ? 'ring-2 ring-brand-500/80 border-transparent' : ''
+      }`}
+    >
+      <div className="flex items-center justify-between">
+        <span className="text-[13px] font-medium text-slate-500">{label}</span>
+        <span className={`flex h-7 w-7 items-center justify-center rounded-lg ring-1 transition-transform duration-300 group-hover:scale-110 ${iconTone}`}>{icon}</span>
       </div>
-      )}
-      </main>
+      <div className="mt-3 text-[28px] font-semibold leading-none tracking-tight text-slate-900">
+        <AnimatedNumber value={value} />
+      </div>
+      <div className="mt-2 truncate text-xs text-slate-400">{sub}</div>
+    </button>
+  );
+}
 
-      {/* Prospect Replies & Inbox Modal */}
-      {isRepliesModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
-          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[85vh]">
-            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
-              <div className="flex items-center gap-2">
-                <Bell className="w-4 h-4 text-sky-600" />
-                <h3 className="font-bold text-sm text-slate-950">Inbound Replies & Notifications</h3>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-sky-800">
-                  {replies.length}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleManualSyncMailbox}
-                  disabled={isSyncingMailbox}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-sky-50/50 disabled:opacity-60 transition"
-                >
-                  <RefreshCw className={`w-3 h-3 text-sky-600 ${isSyncingMailbox ? 'animate-spin' : ''}`} />
-                  <span>{isSyncingMailbox ? 'Checking...' : 'Check Inbox'}</span>
-                </button>
-                <button 
-                  type="button"
-                  onClick={() => setIsRepliesModalOpen(false)} 
-                  className="p-1 text-slate-400 hover:text-slate-700 rounded-lg"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
+function Switch({ checked, onChange, label, hint }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint?: string }) {
+  return (
+    <label className="flex cursor-pointer items-center justify-between gap-4 px-3.5 py-3">
+      <span className="min-w-0">
+        <span className="block text-[13px] font-medium text-slate-800">{label}</span>
+        {hint && <span className="block text-xs text-slate-400">{hint}</span>}
+      </span>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        onClick={() => onChange(!checked)}
+        className={`relative h-5 w-9 shrink-0 rounded-full transition-colors duration-200 ${checked ? 'bg-brand-600' : 'bg-slate-200'}`}
+      >
+        <span
+          className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-300 ease-[cubic-bezier(0.34,1.36,0.64,1)] ${checked ? 'translate-x-4' : 'translate-x-0'}`}
+        />
+      </button>
+    </label>
+  );
+}
 
-            <div className="p-6 overflow-y-auto flex-1 space-y-3">
-              {replies.length === 0 ? (
-                <div className="text-center py-12 text-xs text-slate-500 border border-dashed border-slate-200 rounded-xl p-6">
-                  <Inbox className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                  <p className="font-semibold text-slate-800">No prospect replies yet</p>
-                  <p className="text-slate-400 mt-1 text-[11px]">
-                    The keepalive worker checks Gmail IMAP for new replies every 10 minutes.
-                  </p>
-                </div>
-              ) : (
-                replies.map(r => (
-                  <div 
-                    key={r.id} 
-                    className="p-4 bg-white border border-slate-200 rounded-xl shadow-2xs hover:border-sky-400 text-xs space-y-2 transition cursor-pointer group"
-                    onClick={() => {
-                      if (r.lead_id) openLeadDrawer(r.lead_id);
-                      setIsRepliesModalOpen(false);
-                    }}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="font-semibold text-slate-900 group-hover:text-sky-700 transition">
-                        {r.lead_name || r.sender}
-                      </div>
-                      <span className="text-[10px] text-slate-400 font-mono">
-                        {r.sent_at ? new Date(r.sent_at).toLocaleString() : ''}
-                      </span>
-                    </div>
-                    <div className="font-medium text-slate-800 text-[11px]">
-                      {r.subject}
-                    </div>
-                    {r.snippet && (
-                      <p className="text-slate-600 text-[11px] line-clamp-2 bg-slate-50 p-2 rounded-lg font-sans">
-                        {r.snippet}
-                      </p>
-                    )}
-                    <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1">
-                      <span>{r.lead_company || 'Lead'}</span>
-                      <span className="text-sky-600 font-semibold group-hover:underline flex items-center gap-0.5">
-                        Open Thread <ChevronRight className="w-3 h-3" />
-                      </span>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="label">{label}</label>
+      {children}
+      {hint && <p className="mt-1 text-[11px] text-slate-400">{hint}</p>}
+    </div>
+  );
+}
 
-            <div className="px-6 py-3 border-t border-slate-200 bg-slate-50/80 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setIsRepliesModalOpen(false)}
-                className="px-4 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Slide-over Drawer for Contact & History */}
-      {activeDrawerLead && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/30 backdrop-blur-2xs" onClick={() => setActiveDrawerLead(null)}>
-          <div 
-            className="w-full max-w-xl bg-white h-full shadow-2xl flex flex-col border-l border-slate-200 animate-in slide-in-from-right duration-200"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
-              <div>
-                <h2 className="text-base font-bold text-slate-950">
-                  {`${activeDrawerLead.first_name || ''} ${activeDrawerLead.last_name || ''}`.trim() || 'Contact Details'}
-                </h2>
-                <div className="text-xs text-slate-500 font-medium">
-                  {activeDrawerLead.role || 'No Role'} &bull; {activeDrawerLead.company || 'No Company'}
-                </div>
-              </div>
-              <button 
-                type="button"
-                onClick={() => setActiveDrawerLead(null)}
-                className="p-1 text-slate-400 hover:text-slate-700 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-6 overflow-y-auto flex-1 space-y-5">
-              {/* Meta information card */}
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500">Email:</span>
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-mono text-slate-900 font-medium">{activeDrawerLead.email}</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(activeDrawerLead.email);
-                        showToast('Email copied to clipboard!');
-                      }}
-                      className="p-1 text-slate-400 hover:text-sky-600 rounded"
-                      title="Copy email"
-                    >
-                      <Copy className="w-3 h-3" />
-                    </button>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500">Status:</span>
-                  <span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-semibold border ${getStatusBadge(activeDrawerLead.status)}`}>
-                    {activeDrawerLead.status.replace('_', ' ').toLowerCase()}
-                  </span>
-                </div>
-                {activeDrawerLead.custom_hook && (
-                  <div className="pt-1 border-t border-slate-200/60">
-                    <span className="text-slate-500 block mb-0.5">Custom Hook:</span>
-                    <p className="text-slate-800 bg-white p-2 rounded-lg border border-slate-200/60 font-medium">
-                      {activeDrawerLead.custom_hook}
-                    </p>
-                  </div>
-                )}
-                {activeDrawerLead.notes && (
-                  <div className="pt-1 border-t border-slate-200/60">
-                    <span className="text-slate-500 block mb-0.5">Notes:</span>
-                    <p className="text-slate-700 bg-white p-2 rounded-lg border border-slate-200/60">
-                      {activeDrawerLead.notes}
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Clicks tracking section */}
-              {activeDrawerLead.clicks && activeDrawerLead.clicks.length > 0 && (
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-                      <MousePointerClick className="w-3.5 h-3.5 text-sky-600" />
-                      <span>Link Clicks ({activeDrawerLead.clicks.length})</span>
-                    </h3>
-                    <button
-                      type="button"
-                      onClick={() => openClicksModal(activeDrawerLead.id)}
-                      className="text-[11px] text-sky-600 font-semibold hover:underline"
-                    >
-                      View Details
-                    </button>
-                  </div>
-                  <div className="space-y-1.5">
-                    {activeDrawerLead.clicks.map(c => (
-                      <div key={c.id} className="p-2.5 rounded-xl bg-sky-50/50 border border-sky-100 text-xs">
-                        <div className="flex items-center justify-between text-[11px] text-slate-600 mb-0.5">
-                          <span className="font-semibold text-slate-900 truncate max-w-xs">{c.target_url}</span>
-                          <span className="text-[10px] text-slate-400 font-mono">{new Date(c.clicked_at).toLocaleString()}</span>
-                        </div>
-                        <div className="text-[10px] text-slate-500 font-mono">
-                          campaign: {c.utm_campaign || 'outreach'} &bull; content: {c.utm_content || 'prospect'}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Message History Thread */}
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                    Message History ({activeDrawerLead.messages?.length || 0})
-                  </h3>
-                  <button
-                    type="button"
-                    onClick={() => openCompose(activeDrawerLead)}
-                    className="px-3 py-1.5 text-xs font-semibold text-white bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 rounded-xl shadow-2xs transition"
-                  >
-                    Send Message
-                  </button>
-                </div>
-
-                {!activeDrawerLead.messages || activeDrawerLead.messages.length === 0 ? (
-                  <div className="text-center py-8 text-xs text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200 p-4">
-                    No message history recorded yet.
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {activeDrawerLead.messages.map(msg => (
-                      <div 
-                        key={msg.id} 
-                        className={`p-4 rounded-xl border text-xs space-y-1.5 ${
-                          msg.direction === 'RECEIVED'
-                            ? 'bg-emerald-50/40 border-emerald-200'
-                            : 'bg-white border-slate-200 shadow-2xs'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className={`font-semibold px-2 py-0.5 rounded text-[10px] ${
-                            msg.direction === 'RECEIVED'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : 'bg-sky-100 text-sky-800'
-                          }`}>
-                            {msg.direction === 'RECEIVED' ? 'Inbound Reply' : 'Sent Email'}
-                          </span>
-                          <span className="text-[10px] text-slate-400 font-mono">
-                            {msg.sent_at ? new Date(msg.sent_at).toLocaleString() : ''}
-                          </span>
-                        </div>
-                        <div className="font-semibold text-slate-900 text-xs">
-                          {msg.subject}
-                        </div>
-                        <div className="text-slate-600 text-[11px] whitespace-pre-wrap leading-relaxed font-sans bg-slate-50/80 p-2.5 rounded-lg border border-slate-200/60">
-                          {msg.body_text || msg.snippet}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Compose & Send Outreach Modal */}
-      {isComposeModalOpen && composeLead && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
-          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
-              <div>
-                <h3 className="font-bold text-sm text-slate-950 flex items-center gap-1.5">
-                  <Send className="w-4 h-4 text-sky-600" />
-                  <span>Send Email Outreach</span>
-                </h3>
-                <div className="text-xs text-slate-500 font-medium">
-                  To: <span className="text-slate-900 font-semibold">{composeLead.first_name} {composeLead.last_name}</span> ({composeLead.email})
-                </div>
-              </div>
-              <button 
-                type="button"
-                onClick={() => setIsComposeModalOpen(false)} 
-                className="p-1 text-slate-400 hover:text-slate-700 rounded-lg"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="p-6 overflow-y-auto flex-1 space-y-4">
-              {/* Template Picker */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-semibold text-slate-700">Outreach Template</label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsComposeModalOpen(false);
-                      openTemplateBuilder();
-                    }}
-                    className="text-[11px] text-sky-600 font-semibold hover:underline"
-                  >
-                    Manage Templates
-                  </button>
-                </div>
-                <select
-                  value={composeTemplateId}
-                  onChange={handleTemplateChange}
-                  className="w-full px-3 py-2 text-xs bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 font-medium shadow-2xs"
-                >
-                  <option value="">Custom Freeform Copy</option>
-                  {templates.map(t => (
-                    <option key={t.id} value={t.id}>
-                      {t.name} ({t.category})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Subject */}
-              <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">Subject Line</label>
-                <input
-                  type="text"
-                  value={composeSubject}
-                  onChange={e => setComposeSubject(e.target.value)}
-                  placeholder="Enter email subject..."
-                  className="w-full px-3 py-2 text-xs bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 font-medium shadow-2xs"
-                />
-              </div>
-
-              {/* Body */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-semibold text-slate-700">Message Body</label>
-                  <button
-                    type="button"
-                    onClick={() => setIsPreviewMode(!isPreviewMode)}
-                    className="text-[11px] text-sky-600 font-semibold hover:underline flex items-center gap-1"
-                  >
-                    <Eye className="w-3 h-3" />
-                    <span>{isPreviewMode ? 'Edit Mode' : 'Live Preview'}</span>
-                  </button>
-                </div>
-
-                {isPreviewMode ? (
-                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs whitespace-pre-wrap leading-relaxed font-sans min-h-[220px]">
-                    {composeBody}
-                  </div>
-                ) : (
-                  <textarea
-                    rows={10}
-                    value={composeBody}
-                    onChange={e => setComposeBody(e.target.value)}
-                    placeholder="Write your genuine, professional outreach copy..."
-                    className="w-full p-3 text-xs bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 leading-relaxed font-sans shadow-2xs"
-                  />
-                )}
-
-                {/* Variable Tokens Helper Chips */}
-                <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                  <span className="text-[11px] text-slate-400">Tokens:</span>
-                  {['{{firstName}}', '{{company}}', '{{job_role}}', '{{custom_hook}}'].map(tok => (
-                    <button
-                      key={tok}
-                      type="button"
-                      onClick={() => insertVariableToken(tok)}
-                      className="px-2 py-0.5 text-[10px] font-mono bg-sky-50 hover:bg-sky-100 text-sky-700 rounded-md border border-sky-200 transition"
-                      title={`Click to insert ${tok}`}
-                    >
-                      {tok}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Options Checkboxes */}
-              <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2 text-xs">
-                <label className="flex items-center gap-2 cursor-pointer text-slate-800 font-medium">
-                  <input
-                    type="checkbox"
-                    checked={attachResume}
-                    onChange={e => setAttachResume(e.target.checked)}
-                    className="rounded text-sky-600 focus:ring-sky-500"
-                  />
-                  <span>Attach PDF Resume ({resumeStatus.filename})</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer text-slate-800 font-medium">
-                  <input
-                    type="checkbox"
-                    checked={enableUTMTracking}
-                    onChange={e => setEnableUTMTracking(e.target.checked)}
-                    className="rounded text-sky-600 focus:ring-sky-500"
-                  />
-                  <span>Track link clicks (routes links through a redirect, may hurt inbox placement)</span>
-                </label>
-              </div>
-            </div>
-
-            <div className="px-6 py-3.5 border-t border-slate-200 bg-slate-50/80 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setIsComposeModalOpen(false)}
-                className="px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSendEmail}
-                disabled={isSending}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 rounded-xl shadow-xs shadow-sky-500/25 transition disabled:opacity-60"
-              >
-                <Send className="w-3.5 h-3.5" />
-                <span>{isSending ? 'Dispatching...' : 'Send Outreach'}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Template Builder Modal */}
-      {isTemplateBuilderOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
-          <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[85vh]">
-            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
-              <div className="flex items-center gap-2">
-                <Layers className="w-4 h-4 text-sky-600" />
-                <h3 className="font-bold text-sm text-slate-950">Outreach Template Builder</h3>
-              </div>
-              <button 
-                type="button"
-                onClick={() => setIsTemplateBuilderOpen(false)} 
-                className="p-1 text-slate-400 hover:text-slate-700 rounded-lg"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 flex-1 overflow-hidden">
-              {/* Template list sidebar */}
-              <div className="border-r border-slate-200 p-4 overflow-y-auto space-y-2 bg-slate-50/50">
-                <button
-                  type="button"
-                  onClick={() => openTemplateBuilder(null)}
-                  className="w-full py-2 px-3 text-xs font-semibold bg-white border border-dashed border-sky-300 text-sky-600 rounded-xl hover:bg-sky-50 flex items-center justify-center gap-1.5 transition"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Create New Template</span>
-                </button>
-                <div className="space-y-1.5 pt-2">
-                  {templates.map(tpl => (
-                    <div
-                      key={tpl.id}
-                      onClick={() => openTemplateBuilder(tpl)}
-                      className={`p-3 rounded-xl border text-xs cursor-pointer transition ${
-                        templateForm.id === tpl.id
-                          ? 'bg-white border-sky-500 shadow-xs'
-                          : 'bg-white border-slate-200/80 hover:border-slate-300'
-                      }`}
-                    >
-                      <div className="font-semibold text-slate-900 truncate">{tpl.name}</div>
-                      <div className="text-[10px] text-slate-400 mt-0.5">{tpl.category}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Form panel */}
-              <div className="col-span-2 p-6 overflow-y-auto space-y-4">
-                <form onSubmit={handleSaveTemplate} className="space-y-4">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-xs font-semibold text-slate-700 block mb-1">Template Name</label>
-                      <input
-                        type="text"
-                        value={templateForm.name}
-                        onChange={e => setTemplateForm({ ...templateForm, name: e.target.value })}
-                        placeholder="e.g. Founder Quick Pitch"
-                        className="w-full px-3 py-2 text-xs bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 font-medium"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs font-semibold text-slate-700 block mb-1">Category</label>
-                      <select
-                        value={templateForm.category}
-                        onChange={e => setTemplateForm({ ...templateForm, category: e.target.value })}
-                        className="w-full px-3 py-2 text-xs bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 font-medium"
-                      >
-                        <option value="Cold Outreach">Cold Outreach</option>
-                        <option value="Follow-up">Follow-up</option>
-                        <option value="Referral">Referral</option>
-                        <option value="Custom">Custom</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-semibold text-slate-700 block mb-1">Subject Line Template</label>
-                    <input
-                      type="text"
-                      value={templateForm.subject_template}
-                      onChange={e => setTemplateForm({ ...templateForm, subject_template: e.target.value })}
-                      placeholder="e.g. Engineering & AI systems for {{company}}"
-                      className="w-full px-3 py-2 text-xs bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 font-medium"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-semibold text-slate-700 block mb-1">Body Template</label>
-                    <textarea
-                      rows={8}
-                      value={templateForm.body_template}
-                      onChange={e => setTemplateForm({ ...templateForm, body_template: e.target.value })}
-                      placeholder="Write template copy using tokens like {{firstName}}, {{company}}..."
-                      className="w-full p-3 text-xs bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 font-sans leading-relaxed"
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between pt-2">
-                    {templateForm.id ? (
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteTemplate(templateForm.id)}
-                        className="px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-xl transition"
-                      >
-                        Delete Template
-                      </button>
-                    ) : <div />}
-
-                    <button
-                      type="submit"
-                      className="px-4 py-2 text-xs font-semibold text-white bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 rounded-xl shadow-xs transition"
-                    >
-                      {templateForm.id ? 'Update Template' : 'Create Template'}
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Add / Edit Contact Modal */}
-      {isLeadModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
-          <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
-            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
-              <h3 className="font-bold text-sm text-slate-950">
-                {leadForm.id ? 'Edit Prospect' : 'Add New Prospect'}
-              </h3>
-              <button 
-                type="button"
-                onClick={() => setIsLeadModalOpen(false)} 
-                className="p-1 text-slate-400 hover:text-slate-700 rounded-lg"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveLead} className="p-6 space-y-3.5">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-semibold text-slate-700 block mb-1">First Name</label>
-                  <input
-                    type="text"
-                    value={leadForm.first_name}
-                    onChange={e => setLeadForm({ ...leadForm, first_name: e.target.value })}
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-slate-700 block mb-1">Last Name</label>
-                  <input
-                    type="text"
-                    value={leadForm.last_name}
-                    onChange={e => setLeadForm({ ...leadForm, last_name: e.target.value })}
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">Email *</label>
-                <input
-                  type="email"
-                  required
-                  value={leadForm.email}
-                  onChange={e => setLeadForm({ ...leadForm, email: e.target.value })}
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 font-mono"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-semibold text-slate-700 block mb-1">Company</label>
-                  <input
-                    type="text"
-                    value={leadForm.company}
-                    onChange={e => setLeadForm({ ...leadForm, company: e.target.value })}
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-slate-700 block mb-1">Role / Title</label>
-                  <input
-                    type="text"
-                    value={leadForm.role}
-                    onChange={e => setLeadForm({ ...leadForm, role: e.target.value })}
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-semibold text-slate-700 block mb-1">Website URL</label>
-                  <input
-                    type="url"
-                    value={leadForm.website_url}
-                    onChange={e => setLeadForm({ ...leadForm, website_url: e.target.value })}
-                    placeholder="https://company.com"
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-slate-700 block mb-1">Status</label>
-                  <select
-                    value={leadForm.status}
-                    onChange={e => setLeadForm({ ...leadForm, status: e.target.value })}
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 font-medium"
-                  >
-                    <option value="NOT_CONTACTED">Not Contacted</option>
-                    <option value="CONTACTED">Contacted</option>
-                    <option value="REPLIED">Replied</option>
-                    <option value="FOLLOWED_UP">Followed Up</option>
-                    <option value="BOUNCED">Bounced</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">Custom Personalization Hook</label>
-                <input
-                  type="text"
-                  value={leadForm.custom_hook}
-                  onChange={e => setLeadForm({ ...leadForm, custom_hook: e.target.value })}
-                  placeholder="e.g. building autonomous agents in stealth"
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">Notes</label>
-                <textarea
-                  rows={2}
-                  value={leadForm.notes}
-                  onChange={e => setLeadForm({ ...leadForm, notes: e.target.value })}
-                  className="w-full p-2.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setIsLeadModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 text-xs font-semibold text-white bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 rounded-xl shadow-xs transition"
-                >
-                  Save Prospect
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* CSV Import Modal */}
-      {isImportModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
-          <div className="bg-white w-full max-w-xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
-            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
-              <div className="flex items-center gap-2">
-                <FileSpreadsheet className="w-4 h-4 text-sky-600" />
-                <h3 className="font-bold text-sm text-slate-950">Import Prospects from CSV</h3>
-              </div>
-              <button 
-                type="button"
-                onClick={() => setIsImportModalOpen(false)} 
-                className="p-1 text-slate-400 hover:text-slate-700 rounded-lg"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="p-6 space-y-4">
-              <div className="border-2 border-dashed border-slate-200 hover:border-sky-400 rounded-2xl p-6 text-center cursor-pointer transition bg-slate-50/50"
-                onClick={() => csvFileInputRef.current?.click()}
-              >
-                <Upload className="w-8 h-8 text-sky-500 mx-auto mb-2" />
-                <p className="text-xs font-semibold text-slate-700">Click to upload a .csv file</p>
-                <p className="text-[11px] text-slate-400 mt-0.5">Supports First Name, Last Name, Email, Company, Role, Hook</p>
-                <input
-                  ref={csvFileInputRef}
-                  type="file"
-                  accept=".csv"
-                  className="hidden"
-                  onChange={handleCsvFileUpload}
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">Or Paste CSV Content</label>
-                <textarea
-                  rows={6}
-                  value={csvInput}
-                  onChange={e => setCsvInput(e.target.value)}
-                  placeholder="First Name,Last Name,Email,Company,Role,Custom Hook&#10;John,Doe,john@example.com,Acme,CTO,scaling LLM pipelines"
-                  className="w-full p-3 text-xs bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 font-mono"
-                />
-              </div>
-            </div>
-
-            <div className="px-6 py-3.5 border-t border-slate-200 bg-slate-50/80 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setIsImportModalOpen(false)}
-                className="px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleImportCsv}
-                disabled={isImporting}
-                className="px-4 py-2 text-xs font-semibold text-white bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 rounded-xl shadow-xs transition disabled:opacity-60"
-              >
-                {isImporting ? 'Importing...' : 'Start Import'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Link Clicks Activity Modal */}
-      {isClicksModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
-          <div className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[85vh]">
-            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
-              <div className="flex items-center gap-2">
-                <MousePointerClick className="w-4 h-4 text-sky-600" />
-                <h3 className="font-bold text-sm text-slate-950">
-                  {clicksModalLeadId ? 'Prospect Click Activity' : 'Real-time Link Click Tracking'}
-                </h3>
-              </div>
-              <button 
-                type="button"
-                onClick={() => setIsClicksModalOpen(false)} 
-                className="p-1 text-slate-400 hover:text-slate-700 rounded-lg"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="p-6 overflow-y-auto flex-1">
-              {isLoadingClicks ? (
-                <div className="text-center py-12 text-slate-400">
-                  <RefreshCw className="w-6 h-6 animate-spin mx-auto text-sky-500 mb-2" />
-                  <span>Loading click activity...</span>
-                </div>
-              ) : clicksData.length === 0 ? (
-                <div className="text-center py-12 text-slate-400 border border-dashed border-slate-200 rounded-xl p-6">
-                  <MousePointerClick className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                  <p className="font-semibold text-slate-700">No link clicks recorded yet</p>
-                  <p className="text-xs text-slate-400 mt-1">
-                    When a prospect opens any link (portfolio, GitHub, demo) in your outreach emails, their click and UTM data will show up right here in real time.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {clicksData.map(c => (
-                    <div key={c.id} className="p-3.5 rounded-xl border border-slate-200 bg-white hover:border-sky-300 transition text-xs space-y-1.5 shadow-2xs">
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-slate-900">{c.lead_name || 'Prospect'} ({c.lead_company || 'Company'})</span>
-                        <span className="text-[10px] text-slate-400 font-mono">{c.clicked_at ? new Date(c.clicked_at).toLocaleString() : ''}</span>
-                      </div>
-                      <div className="text-sky-600 font-medium truncate">
-                        {c.target_url}
-                      </div>
-                      <div className="flex flex-wrap gap-2 text-[10px] text-slate-400 font-mono pt-1">
-                        <span>source: {c.utm_source || 'outreach'}</span>
-                        <span>&bull;</span>
-                        <span>campaign: {c.utm_campaign || 'outreach'}</span>
-                        <span>&bull;</span>
-                        <span>content: {c.utm_content || 'prospect'}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="px-6 py-3 border-t border-slate-200 bg-slate-50/80 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setIsClicksModalOpen(false)}
-                className="px-4 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <dt className="text-slate-400">{label}</dt>
+      <dd className="min-w-0 truncate text-right">{children}</dd>
     </div>
   );
 }

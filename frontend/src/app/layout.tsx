@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "outreach engine",
+  title: "Outreach",
   description: "High-performance personal outreach and prospect pipeline management engine",
   icons: {
     icon: [
@@ -32,7 +32,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
-      <body className="min-h-full bg-white text-gray-900">{children}</body>
+      <body className="min-h-full">{children}</body>
     </html>
   );
 }

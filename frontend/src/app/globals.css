@@ -1,13 +1,165 @@
 @import "tailwindcss";
 
-:root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
+/* ---------------------------------------------------------------
+   Design tokens
+   One accent (brand blue), slate neutrals, semantic status colors.
+---------------------------------------------------------------- */
+@theme {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --color-brand-50: #eef4ff;
+  --color-brand-100: #dbe7fe;
+  --color-brand-200: #bfd3fe;
+  --color-brand-300: #93b4fd;
+  --color-brand-400: #608cfa;
+  --color-brand-500: #3b66f5;
+  --color-brand-600: #2549ea;
+  --color-brand-700: #1d38d7;
+  --color-brand-800: #1e30ae;
+  --color-brand-900: #1e2f89;
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.36, 0.64, 1);
+
+  --shadow-soft: 0 1px 2px rgb(15 23 42 / 0.04), 0 1px 1px rgb(15 23 42 / 0.03);
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 4px 16px -6px rgb(15 23 42 / 0.08);
+  --shadow-float: 0 12px 40px -12px rgb(15 23 42 / 0.25), 0 4px 12px -4px rgb(15 23 42 / 0.08);
+  --shadow-brand: 0 1px 2px rgb(37 73 234 / 0.25), 0 6px 16px -6px rgb(37 73 234 / 0.45);
+
+  --animate-fade-in: fade-in 240ms var(--ease-out-expo) both;
+  --animate-fade-up: fade-up 420ms var(--ease-out-expo) both;
+  --animate-scale-in: scale-in 260ms var(--ease-out-expo) both;
+  --animate-shimmer: shimmer 1.6s linear infinite;
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes scale-in {
+    from { opacity: 0; transform: scale(0.96); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  @keyframes shimmer {
+    from { background-position: -400px 0; }
+    to { background-position: 400px 0; }
+  }
 }
 
-body {
-  background-color: #f8fafc;
-  color: #0f172a;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  -webkit-font-smoothing: antialiased;
+/* ---------------------------------------------------------------
+   Base
+---------------------------------------------------------------- */
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+    scroll-behavior: smooth;
+  }
+  body {
+    background-color: #f7f8fa;
+    color: #0f172a;
+    font-family: var(--font-sans);
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection {
+    background: var(--color-brand-100);
+    color: var(--color-brand-900);
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-brand-500);
+    outline-offset: 2px;
+    border-radius: 8px;
+  }
+  button, a, input, select, textarea {
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+    transition-duration: 160ms;
+    transition-timing-function: var(--ease-out-expo);
+  }
+  button:not(:disabled) { cursor: pointer; }
+
+  /* Thin, quiet scrollbars */
+  * { scrollbar-width: thin; scrollbar-color: #d5dae3 transparent; }
+  *::-webkit-scrollbar { width: 10px; height: 10px; }
+  *::-webkit-scrollbar-thumb { background: #d5dae3; border-radius: 999px; border: 3px solid transparent; background-clip: content-box; }
+  *::-webkit-scrollbar-thumb:hover { background-color: #b9c0cc; }
+}
+
+/* ---------------------------------------------------------------
+   Component classes (shared by page.tsx and every view)
+---------------------------------------------------------------- */
+@layer components {
+  .card {
+    @apply bg-white rounded-2xl border border-slate-200/70;
+    box-shadow: var(--shadow-card);
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-xl font-semibold select-none
+      h-9 px-3.5 text-[13px] disabled:opacity-55 disabled:pointer-events-none;
+  }
+  .btn:active:not(:disabled) { transform: scale(0.97); }
+  .btn-sm { @apply h-7 px-2.5 text-xs rounded-lg; }
+  .btn-icon { @apply h-8 w-8 px-0 rounded-lg; }
+  .btn-primary {
+    @apply bg-brand-600 text-white hover:bg-brand-700;
+    box-shadow: var(--shadow-brand);
+  }
+  .btn-secondary {
+    @apply bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:border-slate-300 hover:text-slate-900;
+    box-shadow: var(--shadow-soft);
+  }
+  .btn-ghost { @apply text-slate-500 hover:bg-slate-100 hover:text-slate-900; }
+  .btn-danger { @apply text-rose-600 hover:bg-rose-50 hover:text-rose-700; }
+
+  .input {
+    @apply w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-900
+      placeholder:text-slate-400 outline-none hover:border-slate-300
+      focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10;
+    box-shadow: var(--shadow-soft);
+  }
+  textarea.input { @apply leading-relaxed py-2.5; resize: vertical; }
+  select.input {
+    @apply pr-9 appearance-none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+  }
+  .label { @apply block mb-1.5 text-xs font-medium text-slate-600; }
+
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] font-medium;
+  }
+  .kbd {
+    @apply inline-flex h-5 min-w-5 items-center justify-center rounded-md border border-slate-200 bg-white px-1 font-mono text-[10px] font-medium text-slate-500;
+    box-shadow: 0 1px 0 rgb(15 23 42 / 0.06);
+  }
+  .eyebrow { @apply text-[11px] font-medium uppercase tracking-[0.08em] text-slate-400; }
+
+  .skeleton {
+    @apply rounded-md;
+    background: linear-gradient(90deg, #eef0f4 0px, #f6f7f9 160px, #eef0f4 320px);
+    background-size: 800px 100%;
+    animation: var(--animate-shimmer);
+  }
+
+  /* Staggered children: set --i on each child */
+  .stagger > * {
+    animation: var(--animate-fade-up);
+    animation-delay: calc(min(var(--i, 0), 14) * 28ms);
+  }
+}
+
+/* Respect users who prefer less motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
 }
