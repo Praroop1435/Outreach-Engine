@@ -36,9 +36,10 @@ interface DmActivityListProps {
   activity: DmActivity;
   query: string;
   onCopy: (text: string, name: string) => void;
+  onRowMenu: (e: React.MouseEvent, leadId: number) => void;
 }
 
-export default function DmActivityList({ mode, activity, query, onCopy }: DmActivityListProps) {
+export default function DmActivityList({ mode, activity, query, onCopy, onRowMenu }: DmActivityListProps) {
   const q = query.trim().toLowerCase();
   const matches = (c: DmContact) => !q || `${c.name} ${c.company} ${c.handle}`.toLowerCase().includes(q);
   const replies = mode === 'REPLIED' ? activity.replies.filter(matches) : [];
@@ -56,13 +57,13 @@ export default function DmActivityList({ mode, activity, query, onCopy }: DmActi
           <EmptyState
             icon={mode === 'REPLIED' ? <MessageCircle className="h-5 w-5" /> : <Send className="h-5 w-5" />}
             title={mode === 'REPLIED' ? 'No DM replies yet' : 'No follow-ups due'}
-            description={mode === 'REPLIED' ? 'Click Refresh DMs to check X for new replies.' : 'A follow-up shows up here 3 days after a DM with no reply.'}
+            description={mode === 'REPLIED' ? 'X is checked 4 times a day between 12 PM and 2 AM while your Mac is on.' : 'A follow-up shows up here 3 days after a DM with no reply.'}
           />
         </div>
       ) : (
         <ul className="space-y-3">
           {replies.map(r => (
-            <Row key={r.lead_id} contact={r} when={`Replied ${formatRelative(r.received_at)}`} text={r.text}>
+            <Row key={r.lead_id} onContextMenu={e => onRowMenu(e, r.lead_id)} contact={r} when={`Replied ${formatRelative(r.received_at)}`} text={r.text}>
               <a href={r.chat_url} target="_blank" rel="noreferrer" className="btn btn-primary btn-sm">
                 Open chat
                 <ArrowUpRight className="h-3 w-3" />
@@ -70,7 +71,7 @@ export default function DmActivityList({ mode, activity, query, onCopy }: DmActi
             </Row>
           ))}
           {followUps.map(f => (
-            <Row key={f.lead_id} contact={f} when={`Last DM ${formatRelative(f.last_sent_at)} · follow-up ${f.follow_up_number}`} text={f.draft}>
+            <Row key={f.lead_id} onContextMenu={e => onRowMenu(e, f.lead_id)} contact={f} when={`Last DM ${formatRelative(f.last_sent_at)} · follow-up ${f.follow_up_number}`} text={f.draft}>
               <button type="button" onClick={() => onCopy(f.draft, f.name)} className="btn btn-primary btn-sm">
                 <Copy className="h-3 w-3" />
                 Copy follow-up
@@ -87,9 +88,9 @@ export default function DmActivityList({ mode, activity, query, onCopy }: DmActi
   );
 }
 
-function Row({ contact, when, text, children }: { contact: DmContact; when: string; text: string; children: React.ReactNode }) {
+function Row({ contact, when, text, children, onContextMenu }: { contact: DmContact; when: string; text: string; children: React.ReactNode; onContextMenu: React.MouseEventHandler }) {
   return (
-    <li className="card p-4 sm:p-5 animate-fade-up">
+    <li onContextMenu={onContextMenu} className="card p-4 sm:p-5 animate-fade-up">
       <div className="flex items-start gap-3">
         <Avatar name={contact.name} />
         <div className="min-w-0 flex-1">

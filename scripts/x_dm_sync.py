@@ -6,17 +6,19 @@ receipt goes out: the inbox preview is stored as the reply instead. Nothing is e
 
     .venv/bin/python scripts/x_dm_sync.py            # sync now
     .venv/bin/python scripts/x_dm_sync.py --dry-run  # print matches, write nothing
+    .venv/bin/python scripts/x_dm_sync.py --reread   # refresh text and times of stored threads
 
-Prints one JSON line with the result. scripts/x_dm_helper.py runs this when you click Refresh DMs.
+Prints one JSON line with the result. scripts/x_scheduled_run.py runs this 4 times a day.
 """
 import argparse
+import calendar
 import fcntl
 import hashlib
 import json
 import re
 import sys
 import time
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -34,8 +36,8 @@ LOCK_FILE = Path("/tmp/x_dm_sync.lock")
 # Lives outside the repo: it holds the handles of everyone you chat with, and the repo is public
 STATE_FILE = Path.home() / ".outreach" / "x_dm_state.json"
 MY_USER_ID = "1943576245679329281"
-MAX_LIST_SCROLLS = 40
-MAX_NEW_LOOKUPS = 60    # numeric id to @handle lookups per run, each costs ~5s
+MAX_LIST_SCROLLS = 3    # A new message moves its chat to the top, so a normal check stays near the top of the list
+MAX_NEW_LOOKUPS = 5     # numeric id to @handle lookups per run, each costs ~5s
 TRAILING_TIME = re.compile(r"(\s*\d{1,2}:\d{2}\s?[AP]M)+$")
 
 # X's chat lives inside shadow roots
@@ -69,11 +71,18 @@ OPEN_THREAD_JS = "(()=>{" + ROOTS_JS + r"""
 })()"""
 
 THREAD_JS = "(()=>{" + ROOTS_JS + r"""
+  const list=qa("[data-testid='dm-message-list']")[0];
+  if(!list) return '[]';
   const out=[];
-  qa("[data-testid^='message-text-']").forEach(t=>{
-    const uuid=t.getAttribute('data-testid').replace('message-text-','');
-    const row=qa("[data-testid='message-"+uuid+"']")[0];
-    out.push({uuid,mine:!!(row&&row.className.includes('justify-end')),text:t.innerText||t.textContent});
+  list.querySelectorAll('*').forEach(e=>{
+    const tid=e.getAttribute('data-testid')||'';
+    if(tid.startsWith('message-')&&!tid.startsWith('message-text-')){
+      const body=e.querySelector("[data-testid^='message-text-']");
+      const time=e.querySelector("[id$='-time']");
+      if(body) out.push({uuid:tid.replace('message-',''),mine:e.className.includes('justify-end'),text:body.innerText||body.textContent,time:time?time.textContent.trim():''});
+    } else if(e.children.length===0&&!e.closest("[data-testid^='message-']")&&/[0-9]:[0-9][0-9] ?[AP]M$/.test(e.textContent.trim())){
+      out.push({day:e.textContent.trim()});
+    }
   });
   return JSON.stringify(out);
 })()"""
@@ -135,6 +144,48 @@ def norm(text: str) -> str:
     return re.sub(r"\s+", " ", text or "").strip()
 
 
+def separator_date(label: str, today: date) -> date | None:
+    """X heads each group of messages with "Today 1:24 PM", "Thursday 4:39 PM" or "Thu, Oct 8 at 9:54 PM"."""
+    word = label.split()[0].rstrip(",")
+    if word == "Today":
+        return today
+    if word == "Yesterday":
+        return today - timedelta(days=1)
+    m = re.search(r"([A-Z][a-z]{2}) (\d{1,2})(?:, (\d{4}))?", label)
+    if m:
+        year = int(m.group(3) or today.year)
+        found = datetime.strptime(f"{m.group(1)} {m.group(2)} {year}", "%b %d %Y").date()
+        return found.replace(year=year - 1) if found > today else found
+    if word in calendar.day_name:
+        return today - timedelta(days=(today.weekday() - list(calendar.day_name).index(word)) % 7)
+    return None
+
+
+def dated_messages(items: list[dict], today: date | None = None) -> list[dict]:
+    """Gives each message its real time as naive UTC, the format the database uses."""
+    today = today or date.today()
+    day, last_time, out = None, None, []
+    for item in items:
+        if "day" in item:
+            day, last_time = separator_date(item["day"], today), None
+            continue
+        msg, msg["at"] = dict(item), None
+        try:
+            clock = datetime.strptime(item["time"], "%I:%M %p").time()
+        except ValueError:
+            clock = last_time  # X only labels the last of a quick run of messages
+        if day and clock:
+            if last_time and clock < last_time:  # Past midnight with no new heading
+                day += timedelta(days=1)
+            last_time = clock
+            msg["at"] = datetime.combine(day, clock).astimezone(timezone.utc).replace(tzinfo=None)
+        out.append(msg)
+    # A message X left unlabeled belongs with the next one that has a time
+    for earlier, later in zip(reversed(out[:-1]), reversed(out[1:])):
+        earlier["at"] = earlier["at"] or later["at"]
+    return out
+
+
 def store_reply(session: Session, lead: Lead, thread: str, message_id: str, text: str, when: datetime) -> bool:
     if session.exec(select(EmailMessage).where(EmailMessage.message_id == message_id)).first():
         return False
@@ -152,42 +203,44 @@ def store_reply(session: Session, lead: Lead, thread: str, message_id: str, text
 
 
 def store_thread(session: Session, lead: Lead, thread: str, messages: list[dict]) -> int:
-    """Stores a thread read from X. Existing rows are matched up so nothing doubles."""
+    """Stores a thread read from X, which is the source of truth for text and times. Nothing doubles."""
     logged = session.exec(select(EmailMessage).where(EmailMessage.lead_id == lead.id, EmailMessage.channel == MessageChannel.X_DM.value).order_by(EmailMessage.sent_at)).all()
     unlinked_sent = [m for m in logged if m.direction == EmailDirection.SENT.value and not (m.message_id or "").startswith("xdm:")]
     previews = [m for m in logged if (m.message_id or "").startswith("xdm-preview:")]
-    known = {m.message_id for m in logged}
+    known = {m.message_id: m for m in logged if m.message_id}
     new_replies = 0
-    for msg in messages:
+    last_mine = None
+    for msg in dated_messages(messages):
         message_id = f"xdm:{msg['uuid']}"
-        if message_id in known:
-            continue
         text = TRAILING_TIME.sub("", norm(msg["text"]))  # The bubble's text ends with its time label
-        if msg["mine"]:
-            if unlinked_sent:  # A DM we logged when it was sent
-                row = unlinked_sent.pop(0)
-                row.message_id, row.thread_id = message_id, thread
-                session.add(row)
-            else:              # You typed this one in X yourself, for example a follow-up
-                session.add(EmailMessage(
-                    lead_id=lead.id, message_id=message_id, thread_id=thread, channel=MessageChannel.X_DM.value,
-                    direction=EmailDirection.SENT.value, sender="me", recipient=lead.x_handle or "", subject="X DM",
-                    snippet=text[:500], body_text=text,
-                ))
-                lead.last_contacted_at = datetime.utcnow()
-                session.add(lead)
-        else:
-            match = next((p for p in previews if text.startswith(norm(p.snippet).rstrip("…. "))), None)
-            if match:          # We saved the inbox preview earlier, now we have the full text
-                previews.remove(match)
-                match.message_id, match.body_text, match.snippet = message_id, text, text[:500]
-                session.add(match)
-            elif store_reply(session, lead, thread, message_id, text, datetime.utcnow()):
-                new_replies += 1
+        if msg["mine"] and msg["at"]:
+            last_mine = max(last_mine or msg["at"], msg["at"])
+        row = known.get(message_id)
+        if not row and msg["mine"] and unlinked_sent:  # A DM we logged when it was sent
+            row = unlinked_sent.pop(0)
+        if not row and not msg["mine"]:                # We saved the inbox preview earlier
+            row = next((p for p in previews if text.startswith(norm(p.snippet).rstrip("…. "))), None)
+            if row:
+                previews.remove(row)
+        if row:
+            row.message_id, row.thread_id, row.body_text, row.snippet = message_id, thread, text, text[:500]
+            row.sent_at = msg["at"] or row.sent_at
+            session.add(row)
+        elif msg["mine"]:                              # You typed this one in X yourself, for example a follow-up
+            session.add(EmailMessage(
+                lead_id=lead.id, message_id=message_id, thread_id=thread, channel=MessageChannel.X_DM.value,
+                direction=EmailDirection.SENT.value, sender="me", recipient=lead.x_handle or "", subject="X DM",
+                snippet=text[:500], body_text=text, sent_at=msg["at"] or datetime.utcnow(),
+            ))
+        elif store_reply(session, lead, thread, message_id, text, msg["at"] or datetime.utcnow()):
+            new_replies += 1
+    if last_mine:
+        lead.last_contacted_at = last_mine
+        session.add(lead)
     return new_replies
 
 
-def sync(dry_run: bool = False) -> dict:
+def sync(dry_run: bool = False, reread: bool = False) -> dict:
     state = load_state()
     new_replies = 0
     win = open_hidden_window("https://x.com/notifications")
@@ -216,7 +269,7 @@ def sync(dry_run: bool = False) -> dict:
         for row in matched:
             lead_id = leads[state["handles"][row["user_id"]].lower()]
             thread = row["id"].replace(":", "-")
-            if state["previews"].get(row["id"]) == row["preview"]:
+            if not reread and state["previews"].get(row["id"]) == row["preview"]:
                 continue
             mine = is_mine(row)
             if dry_run:
@@ -265,6 +318,7 @@ def sync(dry_run: bool = False) -> dict:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--reread", action="store_true", help="Reopen every safe thread, even if unchanged")
     args = ap.parse_args()
 
     lock = open(LOCK_FILE, "w")
@@ -277,7 +331,7 @@ def main():
     init_db()
     run = XDmSyncRun()
     try:
-        result = sync(dry_run=args.dry_run)
+        result = sync(dry_run=args.dry_run, reread=args.reread)
         run.conversations, run.new_replies = result["conversations"], result["new_replies"]
     except Exception as e:  # The dashboard shows this instead of an endless spinner
         result = {"ok": False, "error": str(e)[:300]}

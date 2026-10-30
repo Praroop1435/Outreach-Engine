@@ -155,7 +155,7 @@ export default function XRadarView({ apiFetch, showToast, onSummary }: XRadarVie
           </span>
           <div className="min-w-0">
             <p className="text-[13px] font-semibold text-slate-900">
-              {loadFailed ? 'Could not reach the server' : lastRun?.error ? 'Last scan failed' : 'Scanning X every 45 minutes'}
+              {loadFailed ? 'Could not reach the server' : lastRun?.error ? 'Last scan failed' : 'Scanning X 4 times a day'}
             </p>
             <p className="text-xs text-slate-500 truncate">
               {loadFailed
@@ -203,7 +203,7 @@ export default function XRadarView({ apiFetch, showToast, onSummary }: XRadarVie
           <EmptyState
             icon={<Radar className="h-5 w-5" />}
             title={loadFailed ? 'Posts could not load' : filter === 'NEW' ? 'No new job posts right now' : 'Nothing here yet'}
-            description={loadFailed ? undefined : filter === 'NEW' ? 'The radar checks X every 45 minutes while your Mac is awake. Strong matches also pop a notification.' : undefined}
+            description={loadFailed ? undefined : filter === 'NEW' ? 'The radar checks X 4 times a day between 12 PM and 2 AM while your Mac is on. Strong matches also pop a notification.' : undefined}
           />
         </div>
       ) : (

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  X Radar: runs scripts/x_job_monitor.py every 45 minutes while the Mac is awake.
+  X sessions: runs scripts/x_scheduled_run.py (X Radar scan, then DM check) 4 times a day, 12 PM to 2 AM, while the Mac is on.
   Install:   cp scripts/site.praroop.xradar.plist ~/Library/LaunchAgents/ && launchctl load ~/Library/LaunchAgents/site.praroop.xradar.plist
   Remove:    launchctl unload ~/Library/LaunchAgents/site.praroop.xradar.plist && rm ~/Library/LaunchAgents/site.praroop.xradar.plist
   Log:       ~/Library/Logs/xradar.log
@@ -13,12 +13,17 @@
   <key>ProgramArguments</key>
   <array>
     <string>/Users/praroopanand/Realm/Code/Personal Outrech/.venv/bin/python</string>
-    <string>/Users/praroopanand/Realm/Code/Personal Outrech/scripts/x_job_monitor.py</string>
+    <string>/Users/praroopanand/Realm/Code/Personal Outrech/scripts/x_scheduled_run.py</string>
   </array>
   <key>WorkingDirectory</key>
   <string>/Users/praroopanand/Realm/Code/Personal Outrech</string>
-  <key>StartInterval</key>
-  <integer>2700</integer>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Hour</key><integer>0</integer><key>Minute</key><integer>45</integer></dict>
+  </array>
   <key>RunAtLoad</key>
   <false/>
   <key>StandardOutPath</key>

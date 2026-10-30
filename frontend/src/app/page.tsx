@@ -44,7 +44,7 @@ import {
 
 import TemplatesStudioView from '@/components/views/TemplatesStudioView';
 import { SidebarContent } from '@/components/shell/Sidebar';
-import { Drawer, Modal, useConfirm, useLastDefined } from '@/components/ui/overlay';
+import { ContextMenu, Drawer, Modal, useConfirm, useLastDefined } from '@/components/ui/overlay';
 import { formatRelative, parseApiDate } from '@/lib/format';
 import { tagLinks } from '@/lib/utm';
 import { AnimatedNumber, Avatar, EmptyState, SegmentedTabs, SkeletonRows, StatusBadge, Toaster, useToasts } from '@/components/ui/primitives';
@@ -60,6 +60,8 @@ interface ProspectReply {
   sender: string;
   recipient: string;
   subject: string;
+  channel?: string;
+  thread_id?: string;
   snippet?: string;
   sent_at: string;
   lead_name?: string;
@@ -151,7 +153,6 @@ interface ResumeStatus {
   updated_at: string | null;
 }
 
-const DM_HELPER_URL = 'http://127.0.0.1:8439/refresh';
 const BACKEND_BASE = (process.env.NEXT_PUBLIC_BACKEND_URL || "https://outreach-engine-h5lx.onrender.com").replace(/\/$/, "");
 
 export type SidebarTab = 'pipeline' | 'founder_dms' | 'x_radar' | 'templates' | 'clicks' | 'inbox' | 'settings';
@@ -276,7 +277,7 @@ export default function OutreachEngineDashboard() {
     if (tab === 'clicks') {
       loadClicks(null);
     } else if (tab === 'inbox') {
-      apiFetch('/api/analytics/replies').then(res => res.json()).then(data => {
+      apiFetch('/api/analytics/replies?limit=100').then(res => res.json()).then(data => {
         if (Array.isArray(data)) setReplies(data);
       }).catch(() => {});
     }
@@ -337,7 +338,7 @@ export default function OutreachEngineDashboard() {
         apiFetch('/api/analytics/overview'),
         apiFetch('/api/templates'),
         apiFetch('/api/resume/status'),
-        apiFetch('/api/analytics/replies')
+        apiFetch('/api/analytics/replies?limit=100')
       ]);
 
       setBackendOnline(leadsRes.ok);
@@ -488,17 +489,11 @@ export default function OutreachEngineDashboard() {
     showToast(`Pitch for ${lead.first_name || 'Founder'} copied to clipboard!`);
   };
 
-  // X can only be read from your Brave on the Mac, so this calls the local helper (scripts/x_dm_helper.py)
+  // Reloads what's saved. X itself is only read by the scheduled sessions on the Mac (scripts/x_scheduled_run.py)
   const handleRefreshDms = async () => {
     setIsRefreshingDms(true);
     try {
-      const res = await fetch(DM_HELPER_URL, { method: 'POST' });
-      const data = await res.json();
-      if (!data.ok) throw new Error(data.error);
       await Promise.all([loadDmActivity(), fetchData()]);
-      showToast(data.new_replies ? `${data.new_replies} new DM ${data.new_replies === 1 ? 'reply' : 'replies'}` : 'No new DM replies');
-    } catch (err: any) {
-      showToast(err instanceof TypeError ? 'Could not reach your Mac. Refresh DMs only works on the Mac with Brave.' : err.message, 'error');
     } finally {
       setIsRefreshingDms(false);
     }
@@ -854,16 +849,31 @@ export default function OutreachEngineDashboard() {
     // Optimistic: drop the row now, put it back if the server refuses
     const index = leads.findIndex(l => l.id === lead.id);
     setLeads(prev => prev.filter(l => l.id !== lead.id));
+    setReplies(prev => prev.filter(r => r.lead_id !== lead.id));
+    setDmActivity(prev => ({ ...prev, replies: prev.replies.filter(r => r.lead_id !== lead.id), follow_ups: prev.follow_ups.filter(f => f.lead_id !== lead.id) }));
     if (activeDrawerLead?.id === lead.id) setActiveDrawerLead(null);
     try {
       const res = await apiFetch(`/api/leads/${lead.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to delete contact');
       showToast('Contact deleted');
       fetchData();
+      loadDmActivity();
     } catch (err: any) {
       setLeads(prev => prev.some(l => l.id === lead.id) ? prev : [...prev.slice(0, index), lead, ...prev.slice(index)]);
+      fetchData();
+      loadDmActivity();
       showToast(err.message, 'error');
     }
+  };
+
+  // Right-click on any contact row
+  const [rowMenu, setRowMenu] = useState<{ x: number; y: number; lead: Lead } | null>(null);
+  const closeRowMenu = useCallback(() => setRowMenu(null), []);
+  const openRowMenu = (e: React.MouseEvent, leadId?: number | null) => {
+    const lead = leads.find(l => l.id === leadId);
+    if (shareMode || !lead) return;
+    e.preventDefault();
+    setRowMenu({ x: e.clientX, y: e.clientY, lead });
   };
 
   // CSV Import Handlers
@@ -927,7 +937,8 @@ export default function OutreachEngineDashboard() {
   ];
 
   const drawerLead = useLastDefined(activeDrawerLead);
-  const replyCount = replies.filter(r => !/bounce|delivery status/i.test(r.subject || '')).length;
+  // One per person: a conversation with several messages still counts once
+  const replyCount = new Set(replies.filter(r => !/bounce|delivery status/i.test(r.subject || '')).map(r => r.lead_id ?? `m${r.id}`)).size;
   const meta = PAGE_META[activeSidebarNav];
   const showContactActions = activeSidebarNav === 'pipeline' || activeSidebarNav === 'founder_dms';
 
@@ -987,6 +998,18 @@ export default function OutreachEngineDashboard() {
     <div className="min-h-screen lg:flex">
       <Toaster toasts={toasts} onDismiss={dismissToast} />
       {confirmDialog}
+      {rowMenu && (
+        <ContextMenu x={rowMenu.x} y={rowMenu.y} onClose={closeRowMenu}>
+          <button type="button" role="menuitem" onClick={() => { const { lead } = rowMenu; closeRowMenu(); openLeadDrawer(lead.id); }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-slate-700 hover:bg-slate-100">
+            <ExternalLink className="h-3.5 w-3.5 text-slate-400" />
+            Open contact
+          </button>
+          <button type="button" role="menuitem" onClick={() => { const { lead } = rowMenu; closeRowMenu(); handleDeleteLead(lead); }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-rose-600 hover:bg-rose-50">
+            <Trash2 className="h-3.5 w-3.5" />
+            Delete contact
+          </button>
+        </ContextMenu>
+      )}
       <input ref={fileInputRef} type="file" accept=".pdf" className="hidden" onChange={handleResumeUpload} />
 
       {/* Desktop sidebar */}
@@ -1020,9 +1043,9 @@ export default function OutreachEngineDashboard() {
                 </button>
               )}
               {activeSidebarNav === 'founder_dms' && (
-                <button type="button" onClick={handleRefreshDms} disabled={isRefreshingDms} className="btn btn-secondary" title="Check X for DM replies, using Brave on your Mac">
+                <button type="button" onClick={handleRefreshDms} disabled={isRefreshingDms} className="btn btn-secondary" title="Reload saved DMs. X is checked 4 times a day.">
                   <RefreshCw className={`h-3.5 w-3.5 ${isRefreshingDms ? 'animate-spin text-brand-600' : 'text-slate-500'}`} />
-                  <span className="hidden sm:inline">{isRefreshingDms ? 'Checking X' : 'Refresh DMs'}</span>
+                  <span className="hidden sm:inline">{isRefreshingDms ? 'Refreshing' : 'Refresh'}</span>
                 </button>
               )}
               {showContactActions && (
@@ -1063,6 +1086,8 @@ export default function OutreachEngineDashboard() {
           {activeSidebarNav === 'inbox' && (
             <InboxRepliesView
               replies={replies}
+              apiFetch={apiFetch}
+              onRowMenu={openRowMenu}
               openLeadDrawer={openLeadDrawer}
               openComposeByLeadId={openComposeByLeadId}
               onUpdateLeadStatus={handleUpdateLeadStatus}
@@ -1110,7 +1135,7 @@ export default function OutreachEngineDashboard() {
               </div>
 
               {founderStatusFilter === 'DM_REPLIED' || founderStatusFilter === 'DM_FOLLOW_UP' ? (
-                <DmActivityList mode={founderStatusFilter === 'DM_REPLIED' ? 'REPLIED' : 'FOLLOW_UP'} activity={dmActivity} query={searchQuery} onCopy={copyDmFollowUp} />
+                <DmActivityList mode={founderStatusFilter === 'DM_REPLIED' ? 'REPLIED' : 'FOLLOW_UP'} activity={dmActivity} query={searchQuery} onCopy={copyDmFollowUp} onRowMenu={openRowMenu} />
               ) : <div className="card overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-[13px]">
@@ -1138,7 +1163,7 @@ export default function OutreachEngineDashboard() {
                           const handle = (lead.x_handle || '').replace(/^@/, '');
                           const name = `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || 'Founder';
                           return (
-                            <tr key={lead.id} style={{ '--i': i } as React.CSSProperties} className="group border-b border-slate-100 last:border-0 hover:bg-slate-50/70">
+                            <tr key={lead.id} style={{ '--i': i } as React.CSSProperties} onContextMenu={e => openRowMenu(e, lead.id)} className="group border-b border-slate-100 last:border-0 hover:bg-slate-50/70">
                               <td className="px-3 sm:px-4 py-3.5">
                                 <div className="max-w-[140px] sm:max-w-xs truncate font-medium text-slate-900">{lead.company}</div>
                                 <div className="mt-0.5 max-w-[140px] sm:max-w-xs truncate text-xs text-slate-400">
@@ -1242,6 +1267,7 @@ export default function OutreachEngineDashboard() {
                               key={lead.id}
                               style={{ '--i': i } as React.CSSProperties}
                               onClick={shareMode ? undefined : () => openLeadDrawer(lead.id)}
+                              onContextMenu={e => openRowMenu(e, lead.id)}
                               className={`group border-b border-slate-100 last:border-0 hover:bg-slate-50/70 ${shareMode ? '' : 'cursor-pointer'}`}
                             >
                               <td className="px-3 sm:px-4 py-3">

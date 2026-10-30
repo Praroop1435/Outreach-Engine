@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
 
 const EXIT_MS = 220;
@@ -201,6 +201,41 @@ export function useConfirm() {
   ) : null;
 
   return { askConfirm, confirmDialog };
+}
+
+export function ContextMenu({ x, y, onClose, children }: { x: number; y: number; onClose: () => void; children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState({ left: x, top: y });
+
+  // Stay on screen when opened near an edge
+  useLayoutEffect(() => {
+    const box = ref.current?.getBoundingClientRect();
+    if (!box) return;
+    setPosition({ left: Math.min(x, window.innerWidth - box.width - 8), top: Math.min(y, window.innerHeight - box.height - 8) });
+  }, [x, y]);
+
+  useEffect(() => {
+    const onPointer = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('mousedown', onPointer);
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('scroll', onClose, true);
+    window.addEventListener('resize', onClose);
+    window.addEventListener('blur', onClose);
+    return () => {
+      document.removeEventListener('mousedown', onPointer);
+      document.removeEventListener('keydown', onKey);
+      window.removeEventListener('scroll', onClose, true);
+      window.removeEventListener('resize', onClose);
+      window.removeEventListener('blur', onClose);
+    };
+  }, [onClose]);
+
+  return (
+    <div ref={ref} role="menu" style={{ ...position, boxShadow: 'var(--shadow-soft)' }} className="animate-fade-in fixed z-50 min-w-44 rounded-xl border border-slate-200/80 bg-white p-1">
+      {children}
+    </div>
+  );
 }
 
 interface DrawerProps {

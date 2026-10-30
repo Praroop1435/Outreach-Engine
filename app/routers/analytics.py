@@ -141,6 +141,8 @@ def get_recent_replies(
             "sender": msg.sender,
             "recipient": msg.recipient,
             "subject": msg.subject,
+            "channel": msg.channel,
+            "thread_id": msg.thread_id,
             "snippet": msg.snippet or (msg.body_text[:120] if msg.body_text else ""),
             "sent_at": msg.sent_at.isoformat() if msg.sent_at else None,
             "lead_name": f"{lead.first_name or ''} {lead.last_name or ''}".strip() if lead else msg.sender,

@@ -1,7 +1,7 @@
 """Background X job monitor: scrolls your X home feed, scores posts, stores matches for the dashboard's X Radar page.
 
 Scrolls the For you and Following tabs of x.com/home in its own minimized Brave window (your
-logged-in X session), so no server or RDP is needed, only an awake Mac. launchd runs it every 45 minutes:
+logged-in X session), so no server or RDP is needed, only an awake Mac. scripts/x_scheduled_run.py runs it 4 times a day:
 
     .venv/bin/python scripts/x_job_monitor.py            # one scan now
     .venv/bin/python scripts/x_job_monitor.py --dry-run  # score and print, write nothing
