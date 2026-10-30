@@ -57,21 +57,25 @@ EXTRACT_JS = r"""
 """
 
 
-def osa(script: str) -> str:
-    p = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=60)
+def osa(script: str, timeout: int = 60) -> str:
+    p = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=timeout)
     if p.returncode != 0:
         raise RuntimeError(p.stderr.strip())
     return p.stdout.strip()
 
 
 def open_hidden_window(url: str) -> str:
-    return osa(f'''
+    # The first call can sit behind macOS's "wants to control Brave Browser" prompt, so wait long enough to click Allow
+    try:
+        return osa(f'''
     tell application "Brave Browser"
         set w to make new window
         set URL of active tab of w to {json.dumps(url)}
         set minimized of w to true
         return id of w
-    end tell''')
+    end tell''', timeout=300)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("Brave did not respond. Allow python3.13 to control Brave Browser in System Settings > Privacy & Security > Automation") from None
 
 
 def navigate(win_id: str, url: str):

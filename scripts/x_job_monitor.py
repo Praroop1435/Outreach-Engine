@@ -1,7 +1,7 @@
-"""Background X job monitor: searches X, scores posts, stores matches for the dashboard's X Radar page.
+"""Background X job monitor: scrolls your X home feed, scores posts, stores matches for the dashboard's X Radar page.
 
-Runs the x_job_scan queries in its own minimized Brave window (your logged-in X session), so no
-server or RDP is needed, only an awake Mac. launchd runs it every 45 minutes:
+Scrolls the For you and Following tabs of x.com/home in its own minimized Brave window (your
+logged-in X session), so no server or RDP is needed, only an awake Mac. launchd runs it every 45 minutes:
 
     .venv/bin/python scripts/x_job_monitor.py            # one scan now
     .venv/bin/python scripts/x_job_monitor.py --dry-run  # score and print, write nothing
@@ -27,9 +27,11 @@ from sqlmodel import Session, select  # noqa: E402
 from app.db import engine  # noqa: E402
 from app.models import Lead, XJobPost, XScanRun  # noqa: E402
 from app.services.x_job_filter import MATCH_THRESHOLD, NOTIFY_THRESHOLD, extract_pay, score_post  # noqa: E402
-from x_job_scan import EXTRACT_JS, QUERIES, close_window, navigate, open_hidden_window, run_js, search_url  # noqa: E402
+from x_job_scan import EXTRACT_JS, close_window, navigate, open_hidden_window, run_js  # noqa: E402
 
 LOCK_FILE = Path("/tmp/x_job_monitor.lock")
+HOME_URL = "https://x.com/home"
+FEED_TABS = ["For you", "Following"]
 KEEP_SCORE = 2          # store anything this promising so it is not re-expanded every run
 MAX_EXPANSIONS = 12     # full-text fetches per run, each costs ~6s
 
@@ -47,31 +49,42 @@ def notify(title: str, message: str):
                    capture_output=True)
 
 
-def scan(scrolls: int, since: str) -> dict[str, dict]:
+SELECT_TAB_JS = r"""
+(() => {
+  const tab = [...document.querySelectorAll("[role='tab']")].find(t => t.innerText.trim() === %s);
+  if (!tab) return "missing";
+  tab.click();
+  window.scrollTo(0, 0);
+  return "ok";
+})()
+"""
+
+
+def scan(scrolls: int, since: datetime) -> tuple[dict[str, dict], str]:
     seen: dict[str, dict] = {}
-    win = None
+    win = open_hidden_window(HOME_URL)
     try:
-        for key, q in QUERIES.items():
-            url = search_url(q, since)
-            if win is None:
-                win = open_hidden_window(url)
-            else:
-                navigate(win, url)
-            time.sleep(7)
-            if "login" in run_js(win, "location.href"):
-                raise RuntimeError("X is not logged in in Brave")
+        time.sleep(7)
+        if "login" in run_js(win, "location.href"):
+            raise RuntimeError("X is not logged in in Brave")
+        for tab in FEED_TABS:
+            if run_js(win, SELECT_TAB_JS % json.dumps(tab)) != "ok":
+                print(f"{tab}: tab not found, skipped", flush=True)
+                continue
+            time.sleep(5)
             for _ in range(scrolls + 1):
                 for post in json.loads(run_js(win, EXTRACT_JS) or "[]"):
-                    if post["url"] and post["url"] not in seen:
-                        post["query"] = key
+                    posted = parse_time(post.get("posted"))
+                    if post["url"] and post["url"] not in seen and (posted is None or posted >= since):
+                        post["query"] = "home:" + tab.lower().replace(" ", "_")
                         seen[post["url"]] = post
                 run_js(win, "window.scrollBy(0, 2200); true")
                 time.sleep(2.5)
-            print(f"{key}: {len(seen)} posts so far", flush=True)
+            print(f"{tab}: {len(seen)} posts so far", flush=True)
+        run_js(win, SELECT_TAB_JS % json.dumps(FEED_TABS[0]))  # X remembers the last tab; leave yours as it was
         return seen, win
     except Exception:
-        if win:
-            close_window(win)
+        close_window(win)
         raise
 
 
@@ -104,8 +117,8 @@ def parse_time(value: str | None) -> datetime | None:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--scrolls", type=int, default=3)
-    ap.add_argument("--days", type=int, default=2, help="Search window; X's since: works by date")
+    ap.add_argument("--scrolls", type=int, default=15, help="Scrolls per feed tab")
+    ap.add_argument("--days", type=int, default=3, help="Ignore feed posts older than this")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
@@ -116,7 +129,7 @@ def main():
         print("Another scan is running, skipping.")
         return
 
-    since = (datetime.now() - timedelta(days=args.days)).strftime("%Y-%m-%d")
+    since = datetime.utcnow() - timedelta(days=args.days)
     with Session(engine) as session:
         run = XScanRun()
         if not args.dry_run:
