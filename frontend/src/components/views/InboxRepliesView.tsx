@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertOctagon, ArrowUpRight, Inbox, Mail, RefreshCw, Search, ThumbsDown, ThumbsUp } from 'lucide-react';
+import { AlertOctagon, ArrowUpRight, Inbox, Mail, Search, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { Avatar, EmptyState, SegmentedTabs, StatusBadge } from '@/components/ui/primitives';
 import { formatDateTime, formatRelative } from '@/lib/format';
 
@@ -21,8 +21,6 @@ export interface ProspectReply {
 
 interface InboxRepliesViewProps {
   replies: ProspectReply[];
-  isSyncing: boolean;
-  onSyncMailbox: () => void;
   openLeadDrawer: (leadId: number) => void;
   openComposeByLeadId: (leadId: number) => void;
   onUpdateLeadStatus: (leadId: number, status: string) => Promise<void>;
@@ -32,7 +30,7 @@ interface InboxRepliesViewProps {
 const isBounce = (r: ProspectReply) =>
   (r.sender || '').includes('mailer-daemon') || /bounce|delivery status/i.test(r.subject || '');
 
-export default function InboxRepliesView({ replies, isSyncing, onSyncMailbox, openLeadDrawer, openComposeByLeadId, onUpdateLeadStatus }: InboxRepliesViewProps) {
+export default function InboxRepliesView({ replies, openLeadDrawer, openComposeByLeadId, onUpdateLeadStatus }: InboxRepliesViewProps) {
   const [filter, setFilter] = useState('ALL');
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -82,12 +80,6 @@ export default function InboxRepliesView({ replies, isSyncing, onSyncMailbox, op
             icon={<Inbox className="h-5 w-5" />}
             title="Inbox is empty"
             description="Replies and bounces appear here after each Gmail sync. The background job checks every few minutes."
-            action={
-              <button type="button" onClick={onSyncMailbox} disabled={isSyncing} className="btn btn-secondary btn-sm">
-                <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                Sync now
-              </button>
-            }
           />
         </div>
       ) : (

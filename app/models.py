@@ -122,6 +122,14 @@ class XScanRun(SQLModel, table=True):
     new_matches: int = 0
     error: Optional[str] = None
 
+class XDmSyncRun(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    started_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    finished_at: Optional[datetime] = None
+    conversations: int = 0
+    new_replies: int = 0
+    error: Optional[str] = None
+
 # --- Pydantic Request / Response Schemas ---
 
 class LeadCreate(BaseModel):

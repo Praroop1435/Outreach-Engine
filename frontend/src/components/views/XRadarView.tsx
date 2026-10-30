@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowUpRight, Bookmark, CheckCircle2, Clock, Radar, RefreshCw, Search, X as XIcon } from 'lucide-react';
 import { Avatar, EmptyState, SegmentedTabs } from '@/components/ui/primitives';
 import { formatRelative } from '@/lib/format';
@@ -45,6 +45,20 @@ const TAG_STYLES: Record<string, string> = {
   pay: 'bg-teal-50 text-teal-700 border-teal-100',
 };
 const HIDDEN_TAGS = new Set(['pay']); // pay is shown with its amount instead
+const SLOW_LOAD_MS = 4000;
+
+function readCache<T>(key: string): T | null {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function writeCache(key: string, value: unknown) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch (_) {}
+}
 
 function scoreTone(score: number) {
   if (score >= 9) return 'bg-emerald-600 text-white';
@@ -60,32 +74,54 @@ export default function XRadarView({ apiFetch, showToast, onSummary }: XRadarVie
   const [query, setQuery] = useState('');
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [isSlow, setIsSlow] = useState(false);
+  const latestLoad = useRef(0);
+
   const load = useCallback(async () => {
+    const id = ++latestLoad.current;
+    const slowTimer = setTimeout(() => setIsSlow(true), SLOW_LOAD_MS);
     try {
       const [listRes, sumRes] = await Promise.all([apiFetch(`/api/x-jobs?status=${filter}`), apiFetch('/api/x-jobs/summary')]);
-      if (listRes.ok) setPosts(await listRes.json());
-      if (sumRes.ok) {
-        const s = await sumRes.json();
-        setSummary(s);
-        onSummary?.(s);
-      }
+      if (id !== latestLoad.current) return; // You switched tabs while this was loading
+      if (!listRes.ok || !sumRes.ok) throw new Error();
+      const list = await listRes.json();
+      const s = await sumRes.json();
+      if (id !== latestLoad.current) return;
+      setPosts(list);
+      setSummary(s);
+      setLoadFailed(false);
+      onSummary?.(s);
+      writeCache(`cached_x_radar_${filter}`, list);
+      writeCache('cached_x_radar_summary', s);
     } catch {
-      showToast('Could not load X Radar', 'error');
+      if (id === latestLoad.current) setLoadFailed(true);
     } finally {
-      setIsLoading(false);
+      clearTimeout(slowTimer);
+      if (id === latestLoad.current) {
+        setIsSlow(false);
+        setIsLoading(false);
+      }
     }
-  }, [apiFetch, filter, onSummary, showToast]);
+  }, [apiFetch, filter, onSummary]);
 
   useEffect(() => {
+    // Saved posts show right away, the server can take a while to wake up
+    const cachedPosts = readCache<XJobPost[]>(`cached_x_radar_${filter}`);
+    const cachedSummary = readCache<XRadarSummary>('cached_x_radar_summary');
+    setPosts(cachedPosts || []);
+    if (cachedSummary) setSummary(s => s || cachedSummary);
     setIsLoading(true);
     load();
     const t = setInterval(load, 60_000);
     return () => clearInterval(t);
-  }, [load]);
+  }, [load, filter]);
 
   const setStatus = async (post: XJobPost, status: XJobPost['status']) => {
     const prev = posts;
-    setPosts(p => (filter === 'ALL' ? p.map(x => (x.id === post.id ? { ...x, status } : x)) : p.filter(x => x.id !== post.id)));
+    const next = filter === 'ALL' ? posts.map(x => (x.id === post.id ? { ...x, status } : x)) : posts.filter(x => x.id !== post.id);
+    setPosts(next);
+    writeCache(`cached_x_radar_${filter}`, next);
     setSummary(s => s && { ...s, counts: { ...s.counts, [post.status]: s.counts[post.status] - 1, [status]: s.counts[status] + 1 } });
     try {
       const res = await apiFetch(`/api/x-jobs/${post.id}`, {
@@ -96,6 +132,7 @@ export default function XRadarView({ apiFetch, showToast, onSummary }: XRadarVie
       if (!res.ok) throw new Error();
     } catch {
       setPosts(prev);
+      writeCache(`cached_x_radar_${filter}`, prev);
       showToast('Could not update post', 'error');
     }
   };
@@ -118,14 +155,20 @@ export default function XRadarView({ apiFetch, showToast, onSummary }: XRadarVie
           </span>
           <div className="min-w-0">
             <p className="text-[13px] font-semibold text-slate-900">
-              {lastRun?.error ? 'Last scan failed' : 'Scanning X every 45 minutes'}
+              {loadFailed ? 'Could not reach the server' : lastRun?.error ? 'Last scan failed' : 'Scanning X every 45 minutes'}
             </p>
             <p className="text-xs text-slate-500 truncate">
-              {lastRun?.error
-                ? lastRun.error
-                : summary?.last_success_at
-                  ? `Last scan ${formatRelative(summary.last_success_at)} · ${lastRun?.posts_seen ?? 0} posts read, ${lastRun?.new_matches ?? 0} new matches`
-                  : 'Waiting for the first scan from your Mac'}
+              {loadFailed
+                ? posts.length ? 'Showing saved posts. Click Refresh to try again.' : 'Click Refresh to try again.'
+                : isSlow
+                  ? 'Waking up the server, this can take up to a minute'
+                  : lastRun?.error
+                    ? lastRun.error
+                    : summary?.last_success_at
+                      ? `Last scan ${formatRelative(summary.last_success_at)} · ${lastRun?.posts_seen ?? 0} posts read, ${lastRun?.new_matches ?? 0} new matches`
+                      : isLoading
+                        ? 'Loading'
+                        : 'Waiting for the first scan from your Mac'}
             </p>
           </div>
         </div>
@@ -153,12 +196,14 @@ export default function XRadarView({ apiFetch, showToast, onSummary }: XRadarVie
         </div>
       </div>
 
-      {!isLoading && visible.length === 0 ? (
+      {isLoading && visible.length === 0 ? (
+        <ul className="space-y-3">{[0, 1, 2].map(i => <li key={i} className="skeleton h-40 rounded-2xl" />)}</ul>
+      ) : visible.length === 0 ? (
         <div className="card">
           <EmptyState
             icon={<Radar className="h-5 w-5" />}
-            title={filter === 'NEW' ? 'No new job posts right now' : 'Nothing here yet'}
-            description={filter === 'NEW' ? 'The radar checks X every 45 minutes while your Mac is awake. Strong matches also pop a notification.' : undefined}
+            title={loadFailed ? 'Posts could not load' : filter === 'NEW' ? 'No new job posts right now' : 'Nothing here yet'}
+            description={loadFailed ? undefined : filter === 'NEW' ? 'The radar checks X every 45 minutes while your Mac is awake. Strong matches also pop a notification.' : undefined}
           />
         </div>
       ) : (

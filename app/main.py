@@ -7,7 +7,11 @@ import asyncio
 from sqlmodel import Session
 from app.db import init_db, engine
 from app.services.mailbox_sync import sync_mailbox
-from app.routers import leads, templates, sync, analytics, resume, tracking, system, x_jobs
+from app.routers import leads, templates, sync, analytics, resume, tracking, system, x_jobs, x_dms
+
+def run_mailbox_sync():
+    with Session(engine) as session:
+        sync_mailbox(session, max_messages=50)
 
 async def background_mailbox_sync_loop():
     """Runs automatic background IMAP sync every 5 minutes to detect replies & bounces."""
@@ -15,8 +19,8 @@ async def background_mailbox_sync_loop():
         try:
             await asyncio.sleep(300)
             if settings.GMAIL_USER and settings.GMAIL_APP_PASSWORD:
-                with Session(engine) as session:
-                    sync_mailbox(session, max_messages=50)
+                # In a thread: IMAP on the event loop freezes every API request until it finishes
+                await asyncio.to_thread(run_mailbox_sync)
         except asyncio.CancelledError:
             break
         except Exception as e:
@@ -54,6 +58,7 @@ app.include_router(resume.router)
 app.include_router(tracking.router)
 app.include_router(system.router)
 app.include_router(x_jobs.router)
+app.include_router(x_dms.router)
 
 @app.get("/")
 def root():

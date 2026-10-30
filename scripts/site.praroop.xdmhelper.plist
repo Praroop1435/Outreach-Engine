@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Runs scripts/x_dm_helper.py, the local server behind the dashboard's Refresh DMs button.
+  Install:   cp scripts/site.praroop.xdmhelper.plist ~/Library/LaunchAgents/ && launchctl load ~/Library/LaunchAgents/site.praroop.xdmhelper.plist
+  Remove:    launchctl unload ~/Library/LaunchAgents/site.praroop.xdmhelper.plist && rm ~/Library/LaunchAgents/site.praroop.xdmhelper.plist
+  Log:       ~/Library/Logs/xdmhelper.log
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>site.praroop.xdmhelper</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/praroopanand/Realm/Code/Personal Outrech/.venv/bin/python</string>
+    <string>/Users/praroopanand/Realm/Code/Personal Outrech/scripts/x_dm_helper.py</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/praroopanand/Realm/Code/Personal Outrech</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Users/praroopanand/Library/Logs/xdmhelper.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/praroopanand/Library/Logs/xdmhelper.log</string>
+</dict>
+</plist>

@@ -52,6 +52,7 @@ import ClicksTrackingView from '@/components/views/ClicksTrackingView';
 import XRadarView, { type XRadarSummary } from '@/components/views/XRadarView';
 import InboxRepliesView from '@/components/views/InboxRepliesView';
 import SystemSettingsView from '@/components/views/SystemSettingsView';
+import DmActivityList, { type DmActivity } from '@/components/views/DmActivityList';
 
 interface ProspectReply {
   id: number;
@@ -150,6 +151,7 @@ interface ResumeStatus {
   updated_at: string | null;
 }
 
+const DM_HELPER_URL = 'http://127.0.0.1:8439/refresh';
 const BACKEND_BASE = (process.env.NEXT_PUBLIC_BACKEND_URL || "https://outreach-engine-h5lx.onrender.com").replace(/\/$/, "");
 
 export type SidebarTab = 'pipeline' | 'founder_dms' | 'x_radar' | 'templates' | 'clicks' | 'inbox' | 'settings';
@@ -217,11 +219,36 @@ export default function OutreachEngineDashboard() {
 
   // Keeps the sidebar badge current even when the X Radar page is closed
   useEffect(() => {
+    try {
+      const cached = localStorage.getItem('cached_x_radar_summary');
+      if (cached) handleXRadarSummary(JSON.parse(cached));
+    } catch (_) {}
     const poll = () => apiFetch('/api/x-jobs/summary').then(r => (r.ok ? r.json() : null)).then(s => s && handleXRadarSummary(s)).catch(() => {});
     poll();
     const t = setInterval(poll, 5 * 60_000);
     return () => clearInterval(t);
   }, [handleXRadarSummary]);
+
+  const [dmActivity, setDmActivity] = useState<DmActivity>({ replies: [], follow_ups: [], last_run: null });
+  const [isRefreshingDms, setIsRefreshingDms] = useState(false);
+
+  const loadDmActivity = useCallback(async () => {
+    try {
+      const res = await apiFetch('/api/x-dms');
+      if (!res.ok) return;
+      const data = await res.json();
+      setDmActivity(data);
+      try { localStorage.setItem('cached_dm_activity', JSON.stringify(data)); } catch (_) {}
+    } catch (_) {}
+  }, []);
+
+  useEffect(() => {
+    try {
+      const cached = localStorage.getItem('cached_dm_activity');
+      if (cached) setDmActivity(JSON.parse(cached));
+    } catch (_) {}
+    loadDmActivity();
+  }, [loadDmActivity]);
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncingMailbox, setIsSyncingMailbox] = useState(false);
@@ -459,6 +486,27 @@ export default function OutreachEngineDashboard() {
       `https://praroop.site`;
     navigator.clipboard.writeText(tagLinks(msg, lead.company, `lead_${lead.id}`, 'x_dm'));
     showToast(`Pitch for ${lead.first_name || 'Founder'} copied to clipboard!`);
+  };
+
+  // X can only be read from your Brave on the Mac, so this calls the local helper (scripts/x_dm_helper.py)
+  const handleRefreshDms = async () => {
+    setIsRefreshingDms(true);
+    try {
+      const res = await fetch(DM_HELPER_URL, { method: 'POST' });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error);
+      await Promise.all([loadDmActivity(), fetchData()]);
+      showToast(data.new_replies ? `${data.new_replies} new DM ${data.new_replies === 1 ? 'reply' : 'replies'}` : 'No new DM replies');
+    } catch (err: any) {
+      showToast(err instanceof TypeError ? 'Could not reach your Mac. Refresh DMs only works on the Mac with Brave.' : err.message, 'error');
+    } finally {
+      setIsRefreshingDms(false);
+    }
+  };
+
+  const copyDmFollowUp = (text: string, name: string) => {
+    navigator.clipboard.writeText(text);
+    showToast(`Follow-up for ${name} copied`);
   };
 
   const handleManualSyncMailbox = async () => {
@@ -867,11 +915,15 @@ export default function OutreachEngineDashboard() {
 
   const founderFilterTabs = [
     { id: 'ALL', label: 'All', count: founderTabCounts.all },
-    { id: 'PENDING_DM', label: 'Pending', count: founderTabCounts.pending },
-    { id: 'DM_STAGED', label: 'Ready', count: founderTabCounts.staged },
+    ...(shareMode ? [] : [
+      { id: 'DM_REPLIED', label: 'Replied', count: dmActivity.replies.length },
+      { id: 'DM_FOLLOW_UP', label: 'Follow up', count: dmActivity.follow_ups.length },
+    ]),
     { id: 'DMED', label: 'DMed', count: founderTabCounts.dmed },
+    { id: 'DM_STAGED', label: 'Ready', count: founderTabCounts.staged },
     { id: 'DM_CLOSED', label: 'Closed', count: founderTabCounts.closed },
-    { id: 'INVALID_PROFILE', label: 'Invalid', count: founderTabCounts.invalid }
+    ...(founderTabCounts.pending ? [{ id: 'PENDING_DM', label: 'Pending', count: founderTabCounts.pending }] : []),
+    ...(founderTabCounts.invalid ? [{ id: 'INVALID_PROFILE', label: 'Invalid', count: founderTabCounts.invalid }] : []),
   ];
 
   const drawerLead = useLastDefined(activeDrawerLead);
@@ -961,10 +1013,18 @@ export default function OutreachEngineDashboard() {
               <p className="hidden sm:block truncate text-[13px] text-slate-500">{meta.subtitle}</p>
             </div>
             {!shareMode && <div className="flex items-center gap-2">
-              <button type="button" onClick={handleManualSyncMailbox} disabled={isSyncingMailbox} className="btn btn-secondary" title="Check Gmail for replies and bounces">
-                <RefreshCw className={`h-3.5 w-3.5 ${isSyncingMailbox ? 'animate-spin text-brand-600' : 'text-slate-500'}`} />
-                <span className="hidden sm:inline">{isSyncingMailbox ? 'Syncing' : 'Sync inbox'}</span>
-              </button>
+              {(activeSidebarNav === 'pipeline' || activeSidebarNav === 'inbox') && (
+                <button type="button" onClick={handleManualSyncMailbox} disabled={isSyncingMailbox} className="btn btn-secondary" title="Check Gmail for replies and bounces">
+                  <RefreshCw className={`h-3.5 w-3.5 ${isSyncingMailbox ? 'animate-spin text-brand-600' : 'text-slate-500'}`} />
+                  <span className="hidden sm:inline">{isSyncingMailbox ? 'Syncing' : 'Sync inbox'}</span>
+                </button>
+              )}
+              {activeSidebarNav === 'founder_dms' && (
+                <button type="button" onClick={handleRefreshDms} disabled={isRefreshingDms} className="btn btn-secondary" title="Check X for DM replies, using Brave on your Mac">
+                  <RefreshCw className={`h-3.5 w-3.5 ${isRefreshingDms ? 'animate-spin text-brand-600' : 'text-slate-500'}`} />
+                  <span className="hidden sm:inline">{isRefreshingDms ? 'Checking X' : 'Refresh DMs'}</span>
+                </button>
+              )}
               {showContactActions && (
                 <>
                   <button type="button" onClick={() => setIsImportModalOpen(true)} className="btn btn-secondary hidden md:inline-flex">
@@ -1003,8 +1063,6 @@ export default function OutreachEngineDashboard() {
           {activeSidebarNav === 'inbox' && (
             <InboxRepliesView
               replies={replies}
-              isSyncing={isSyncingMailbox}
-              onSyncMailbox={handleManualSyncMailbox}
               openLeadDrawer={openLeadDrawer}
               openComposeByLeadId={openComposeByLeadId}
               onUpdateLeadStatus={handleUpdateLeadStatus}
@@ -1029,9 +1087,18 @@ export default function OutreachEngineDashboard() {
             <div className="space-y-6">
               <section className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
                 <StatCard label="Founders" value={founderTabCounts.all} sub="from the founder sheet" icon={<Users className="h-4 w-4" />} active={founderStatusFilter === 'ALL'} onClick={() => setFounderStatusFilter('ALL')} />
-                <StatCard label="DM ready" value={founderTabCounts.staged} sub="open DMs, verified" icon={<Sparkles className="h-4 w-4" />} active={founderStatusFilter === 'DM_STAGED'} onClick={() => setFounderStatusFilter('DM_STAGED')} />
                 <StatCard label="DMed" value={founderTabCounts.dmed} sub="sent on X" icon={<Send className="h-4 w-4" />} active={founderStatusFilter === 'DMED'} onClick={() => setFounderStatusFilter('DMED')} />
-                <StatCard label="DM closed" value={founderTabCounts.closed} sub="skipped, DMs off" icon={<X className="h-4 w-4" />} active={founderStatusFilter === 'DM_CLOSED'} onClick={() => setFounderStatusFilter('DM_CLOSED')} />
+                {shareMode ? (
+                  <>
+                    <StatCard label="DM ready" value={founderTabCounts.staged} sub="open DMs, verified" icon={<Sparkles className="h-4 w-4" />} active={founderStatusFilter === 'DM_STAGED'} onClick={() => setFounderStatusFilter('DM_STAGED')} />
+                    <StatCard label="DM closed" value={founderTabCounts.closed} sub="skipped, DMs off" icon={<X className="h-4 w-4" />} active={founderStatusFilter === 'DM_CLOSED'} onClick={() => setFounderStatusFilter('DM_CLOSED')} />
+                  </>
+                ) : (
+                  <>
+                    <StatCard label="Replied" value={dmActivity.replies.length} sub="answered on X" icon={<Inbox className="h-4 w-4" />} active={founderStatusFilter === 'DM_REPLIED'} onClick={() => setFounderStatusFilter('DM_REPLIED')} />
+                    <StatCard label="Follow-up due" value={dmActivity.follow_ups.length} sub="drafts ready to copy" icon={<Clock className="h-4 w-4" />} active={founderStatusFilter === 'DM_FOLLOW_UP'} onClick={() => setFounderStatusFilter('DM_FOLLOW_UP')} tone="amber" />
+                  </>
+                )}
               </section>
 
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
@@ -1042,7 +1109,9 @@ export default function OutreachEngineDashboard() {
                 </div>
               </div>
 
-              <div className="card overflow-hidden">
+              {founderStatusFilter === 'DM_REPLIED' || founderStatusFilter === 'DM_FOLLOW_UP' ? (
+                <DmActivityList mode={founderStatusFilter === 'DM_REPLIED' ? 'REPLIED' : 'FOLLOW_UP'} activity={dmActivity} query={searchQuery} onCopy={copyDmFollowUp} />
+              ) : <div className="card overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-[13px]">
                     <thead>
@@ -1117,7 +1186,7 @@ export default function OutreachEngineDashboard() {
                     </tbody>
                   </table>
                 </div>
-              </div>
+              </div>}
             </div>
           )}
 
