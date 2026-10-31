@@ -47,6 +47,7 @@ import { SidebarContent } from '@/components/shell/Sidebar';
 import { ContextMenu, Drawer, Modal, useConfirm, useLastDefined } from '@/components/ui/overlay';
 import { formatRelative, parseApiDate } from '@/lib/format';
 import { tagLinks } from '@/lib/utm';
+import { jobRoleFromNotes } from '@/lib/jobRole';
 import { AnimatedNumber, Avatar, EmptyState, SegmentedTabs, SkeletonRows, StatusBadge, Toaster, useToasts } from '@/components/ui/primitives';
 import ClicksTrackingView from '@/components/views/ClicksTrackingView';
 import XRadarView, { type XRadarSummary } from '@/components/views/XRadarView';
@@ -699,7 +700,7 @@ export default function OutreachEngineDashboard() {
     const rawHook = (lead.custom_hook || '').trim().replace(/\.$/, '');
     const hook = !rawHook || /https?:\/\/|linkedin\.com|^what you are building at/i.test(rawHook) ? 'your recent work' : rawHook;
     const role = lead.role || 'team';
-    const jobRole = lead.notes || 'AI Engineer';
+    const jobRole = jobRoleFromNotes(lead.notes);
 
     const fill = (text: string) => text
       .replace(/{{\s*(firstName|first_name)\s*}}/gi, fn)

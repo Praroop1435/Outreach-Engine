@@ -21,6 +21,25 @@ def clean_custom_hook(hook: Optional[str]) -> str:
         return "your recent work"
     return hook
 
+DEFAULT_JOB_ROLE = "AI Engineer"
+ROLE_WORDS_REGEX = re.compile(r"\b(engineer|developer|intern|internship|sde|programmer|scientist|architect)\b", re.IGNORECASE)
+SOURCE_TAG_REGEX = re.compile(r"\s*\([^)]*(finder|founder|talent|remote|ppo|yc)[^)]*\)", re.IGNORECASE)
+YC_ROLE_REGEX = re.compile(r"^YC Work at a Startup:\s*([^.,\[(]+)")
+NOT_A_TITLE_REGEX = re.compile(r"[|:]|https?:|\.$")
+
+
+def job_role_from_notes(notes: str | None) -> str:
+    """Notes mix role names with company blurbs and sourcing details; only a real title may reach a subject line."""
+    text = (notes or "").strip()
+    yc = YC_ROLE_REGEX.match(text)
+    if yc:
+        text = yc.group(1).strip()
+    text = SOURCE_TAG_REGEX.sub("", text).replace(" - ", ", ").strip()
+    if len(text.split()) > 6 or len(text) > 60 or not ROLE_WORDS_REGEX.search(text) or NOT_A_TITLE_REGEX.search(text):
+        return DEFAULT_JOB_ROLE
+    return text
+
+
 def render_template(template_str: str, lead: Lead) -> str:
     """Renders placeholders in the template with lead attributes."""
     mapping = {
@@ -34,8 +53,8 @@ def render_template(template_str: str, lead: Lead) -> str:
         "custom_hook": clean_custom_hook(lead.custom_hook),
         "email": lead.email,
         "website": lead.website_url or "",
-        "job_role": lead.notes or "AI Engineer",
-        "target_role": lead.notes or "AI Engineer",
+        "job_role": job_role_from_notes(lead.notes),
+        "target_role": job_role_from_notes(lead.notes),
     }
     rendered = template_str
     for key, value in mapping.items():

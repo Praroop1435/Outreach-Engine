@@ -125,4 +125,20 @@ I'm looking for a remote automation or AI role. Open to a 15 minute call this we
 Praroop
 https://praroop.site""",
     },
+    {
+        "name": "8. My Reachout (Saw the Post)",
+        "category": "Cold Outreach",
+        "subject_template": "Engineer role at {{company}}: Praroop Anand",
+        "body_template": """Hi {{firstName}},
+
+Saw your post about hiring at {{company}}. I'd love to join as an engineer.
+
+For the past 6 months I've been building production AI agents and backend systems at Relu Consultancy, while finishing my final year of B.Tech. One of them is InsightFlow AI, a RAG platform for a US insurance agency that scored 92% on RAGAS.
+
+Here is my portfolio: https://praroop.site
+
+Do you have 10 to 15 minutes for a quick call? Or send me an assignment so I can show my work.
+
+Praroop""",
+    },
 ]
