@@ -151,24 +151,21 @@ export default function XRadarView({ apiFetch, showToast, onSummary }: XRadarVie
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600 ring-1 ring-brand-100">
             <Radar className="h-4 w-4" />
-            {lastRun && !lastRun.error && <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white" />}
           </span>
           <div className="min-w-0">
             <p className="text-[13px] font-semibold text-slate-900">
-              {loadFailed ? 'Could not reach the server' : lastRun?.error ? 'Last scan failed' : 'Automatic X scans are off'}
+              {loadFailed ? 'Could not reach the server' : 'Automatic X scans are off'}
             </p>
             <p className="text-xs text-slate-500 truncate">
               {loadFailed
                 ? posts.length ? 'Showing saved posts. Click Refresh to try again.' : 'Click Refresh to try again.'
                 : isSlow
                   ? 'Waking up the server, this can take up to a minute'
-                  : lastRun?.error
-                    ? lastRun.error
-                    : summary?.last_success_at
-                      ? `Last scan ${formatRelative(summary.last_success_at)} · ${lastRun?.posts_seen ?? 0} posts read, ${lastRun?.new_matches ?? 0} new matches`
-                      : isLoading
-                        ? 'Loading'
-                        : 'Waiting for the first scan from your Mac'}
+                  : summary?.last_success_at
+                    ? `Last successful scan ${formatRelative(summary.last_success_at)}. Posts found earlier stay here.`
+                    : isLoading
+                      ? 'Loading'
+                      : 'Posts found earlier stay here.'}
             </p>
           </div>
         </div>
