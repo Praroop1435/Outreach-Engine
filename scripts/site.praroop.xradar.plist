@@ -2,6 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
   X sessions: runs scripts/x_scheduled_run.py (X Radar scan, then DM check) 4 times a day, 12 PM to 2 AM, while the Mac is on.
+  Turned off 2026-11-04 at the user's request. Run the Install line below to turn it back on.
   Install:   cp scripts/site.praroop.xradar.plist ~/Library/LaunchAgents/ && launchctl load ~/Library/LaunchAgents/site.praroop.xradar.plist
   Remove:    launchctl unload ~/Library/LaunchAgents/site.praroop.xradar.plist && rm ~/Library/LaunchAgents/site.praroop.xradar.plist
   Log:       ~/Library/Logs/xradar.log

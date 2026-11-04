@@ -1044,7 +1044,7 @@ export default function OutreachEngineDashboard() {
                 </button>
               )}
               {activeSidebarNav === 'founder_dms' && (
-                <button type="button" onClick={handleRefreshDms} disabled={isRefreshingDms} className="btn btn-secondary" title="Reload saved DMs. X is checked 4 times a day.">
+                <button type="button" onClick={handleRefreshDms} disabled={isRefreshingDms} className="btn btn-secondary" title="Reload saved DMs. Automatic X checks are off.">
                   <RefreshCw className={`h-3.5 w-3.5 ${isRefreshingDms ? 'animate-spin text-brand-600' : 'text-slate-500'}`} />
                   <span className="hidden sm:inline">{isRefreshingDms ? 'Refreshing' : 'Refresh'}</span>
                 </button>

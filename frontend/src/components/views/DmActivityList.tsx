@@ -57,7 +57,7 @@ export default function DmActivityList({ mode, activity, query, onCopy, onRowMen
           <EmptyState
             icon={mode === 'REPLIED' ? <MessageCircle className="h-5 w-5" /> : <Send className="h-5 w-5" />}
             title={mode === 'REPLIED' ? 'No DM replies yet' : 'No follow-ups due'}
-            description={mode === 'REPLIED' ? 'X is checked 4 times a day between 12 PM and 2 AM while your Mac is on.' : 'A follow-up shows up here 3 days after a DM with no reply.'}
+            description={mode === 'REPLIED' ? 'Automatic X checks are off. Replies saved earlier stay here.' : 'A follow-up shows up here 3 days after a DM with no reply.'}
           />
         </div>
       ) : (
